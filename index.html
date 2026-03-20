@@ -793,139 +793,236 @@ hScroll.addEventListener("scroll",()=>{bScroll.scrollLeft=hScroll.scrollLeft;});
 render();
 </script>
 
-<!-- ── ADD ROLE MODAL ─────────────────────────────────────────────────────── -->
+<!-- ── ADD ROLE MODAL v2 (single + bulk) ────────────────────────────────── -->
 <style>
-  /* Floating action button */
   .fab{position:fixed;bottom:2rem;right:2rem;z-index:200;
     width:52px;height:52px;border-radius:50%;border:none;cursor:pointer;
-    background:var(--accent);color:#0d0f11;font-size:1.5rem;line-height:1;
+    background:var(--accent);color:#0d0f11;font-size:1.5rem;
     box-shadow:0 4px 20px rgba(74,222,128,.35);
     display:flex;align-items:center;justify-content:center;
     transition:transform .15s,box-shadow .15s;}
   .fab:hover{transform:scale(1.08);box-shadow:0 6px 28px rgba(74,222,128,.5);}
 
-  /* Backdrop */
   .modal-backdrop{display:none;position:fixed;inset:0;z-index:300;
-    background:rgba(0,0,0,.65);backdrop-filter:blur(3px);
+    background:rgba(0,0,0,.7);backdrop-filter:blur(4px);
     align-items:center;justify-content:center;}
   .modal-backdrop.open{display:flex;}
 
-  /* Modal card */
   .modal-card{background:var(--surface);border:1px solid var(--border2);
-    border-radius:12px;padding:2rem;width:min(520px,92vw);
+    border-radius:12px;padding:1.75rem;width:min(600px,94vw);
+    max-height:90vh;overflow-y:auto;
     box-shadow:0 24px 60px rgba(0,0,0,.6);}
-  .modal-card h2{font-family:var(--serif);font-size:1.25rem;font-weight:700;
-    color:var(--text);margin-bottom:1.4rem;}
+  .modal-card h2{font-family:var(--serif);font-size:1.2rem;font-weight:700;
+    color:var(--text);margin-bottom:1.2rem;}
   .modal-card h2 span{color:var(--accent);}
 
-  .modal-field{margin-bottom:1rem;}
+  /* Mode tabs */
+  .mode-tabs{display:flex;gap:0;margin-bottom:1.25rem;
+    border:1px solid var(--border2);border-radius:7px;overflow:hidden;}
+  .mode-tab{flex:1;padding:.45rem 0;font-family:var(--mono);font-size:12px;
+    cursor:pointer;border:none;background:transparent;color:var(--muted);
+    transition:all .15s;}
+  .mode-tab.active{background:var(--surface2);color:var(--accent);}
+
+  .modal-field{margin-bottom:.9rem;}
   .modal-field label{display:block;font-size:11px;color:var(--muted);
-    letter-spacing:.05em;text-transform:uppercase;margin-bottom:.35rem;}
-  .modal-field input,.modal-field select{
+    letter-spacing:.05em;text-transform:uppercase;margin-bottom:.3rem;}
+  .modal-field input,.modal-field textarea{
     width:100%;background:var(--surface2);border:1px solid var(--border2);
     border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;
-    padding:.5rem .75rem;outline:none;transition:border-color .15s;}
-  .modal-field input:focus,.modal-field select:focus{border-color:var(--accent);}
-  .modal-field input::placeholder{color:var(--muted);}
+    padding:.5rem .75rem;outline:none;transition:border-color .15s;resize:vertical;}
+  .modal-field input:focus,.modal-field textarea:focus{border-color:var(--accent);}
+  .modal-field input::placeholder,.modal-field textarea::placeholder{color:var(--muted);}
+  .modal-field textarea{min-height:120px;line-height:1.6;}
 
-  /* Auto-filled preview row */
-  .modal-preview{display:none;margin-top:1rem;padding:.85rem 1rem;
-    background:var(--surface2);border:1px solid var(--border);border-radius:8px;
-    font-size:11px;line-height:1.8;}
+  /* Bulk queue table */
+  .bulk-queue{margin-top:.75rem;display:none;
+    border:1px solid var(--border);border-radius:7px;overflow:hidden;}
+  .bulk-queue.show{display:block;}
+  .bq-header{display:grid;grid-template-columns:1fr 2fr 80px 90px;
+    gap:0;background:var(--surface2);
+    font-size:10px;color:var(--muted);letter-spacing:.05em;text-transform:uppercase;}
+  .bq-header span,.bq-row span{padding:.4rem .6rem;}
+  .bq-row{display:grid;grid-template-columns:1fr 2fr 80px 90px;
+    border-top:1px solid var(--border);font-size:11px;align-items:center;}
+  .bq-row:hover{background:rgba(255,255,255,.02);}
+  .bq-row .bq-co{color:var(--text);font-weight:500;overflow:hidden;
+    white-space:nowrap;text-overflow:ellipsis;}
+  .bq-row .bq-url{color:var(--blue);overflow:hidden;white-space:nowrap;
+    text-overflow:ellipsis;font-size:10px;}
+  .bq-row .bq-status{font-size:10px;}
+  .bq-row .bq-status.ok{color:var(--accent);}
+  .bq-row .bq-status.err{color:var(--red);}
+  .bq-row .bq-status.pending{color:var(--muted);}
+  .bq-row .bq-del{color:var(--muted);cursor:pointer;text-align:center;
+    font-size:13px;padding:.3rem;}
+  .bq-row .bq-del:hover{color:var(--red);}
+
+  /* Single preview */
+  .modal-preview{display:none;margin-top:.75rem;padding:.8rem 1rem;
+    background:var(--surface2);border:1px solid var(--border);
+    border-radius:7px;font-size:11px;line-height:1.9;}
   .modal-preview.show{display:block;}
-  .modal-preview .pv-row{display:flex;gap:.5rem;}
-  .modal-preview .pv-label{color:var(--muted);width:72px;flex-shrink:0;}
-  .modal-preview .pv-val{color:var(--text);}
+  .pv-row{display:flex;gap:.5rem;}
+  .pv-label{color:var(--muted);width:70px;flex-shrink:0;}
+  .pv-val{color:var(--text);}
 
-  .modal-actions{display:flex;gap:.65rem;justify-content:flex-end;margin-top:1.4rem;}
-  .modal-btn{padding:.5rem 1.1rem;border-radius:6px;border:1px solid var(--border2);
+  .modal-actions{display:flex;gap:.6rem;justify-content:flex-end;
+    margin-top:1.2rem;flex-wrap:wrap;align-items:center;}
+  .modal-btn{padding:.45rem 1rem;border-radius:6px;border:1px solid var(--border2);
     font-family:var(--mono);font-size:12px;cursor:pointer;transition:all .15s;}
   .modal-btn.cancel{background:transparent;color:var(--muted);}
   .modal-btn.cancel:hover{color:var(--text);border-color:var(--text);}
   .modal-btn.fetch{background:rgba(96,165,250,.15);color:var(--blue);
     border-color:rgba(96,165,250,.3);}
-  .modal-btn.fetch:hover{background:rgba(96,165,250,.25);}
-  .modal-btn.save{background:var(--accent);color:#0d0f11;border-color:var(--accent);font-weight:600;}
+  .modal-btn.fetch:hover{background:rgba(96,165,250,.28);}
+  .modal-btn.parse{background:rgba(192,132,252,.15);color:var(--purple);
+    border-color:rgba(192,132,252,.3);}
+  .modal-btn.parse:hover{background:rgba(192,132,252,.28);}
+  .modal-btn.save{background:var(--accent);color:#0d0f11;
+    border-color:var(--accent);font-weight:600;}
   .modal-btn.save:hover{background:var(--accent2);}
-  .modal-btn:disabled{opacity:.45;cursor:not-allowed;}
+  .modal-btn:disabled{opacity:.4;cursor:not-allowed;}
 
-  .modal-status{font-size:11px;color:var(--muted);margin-top:.5rem;min-height:16px;text-align:right;}
+  .modal-status{font-size:11px;color:var(--muted);margin-top:.4rem;
+    min-height:15px;text-align:right;}
   .modal-status.err{color:var(--red);}
   .modal-status.ok{color:var(--accent);}
+
+  .bulk-hint{font-size:10px;color:var(--muted);margin-top:.35rem;line-height:1.6;}
+  .progress-bar{height:3px;background:var(--border);border-radius:2px;
+    margin-top:.6rem;overflow:hidden;display:none;}
+  .progress-bar.show{display:block;}
+  .progress-fill{height:100%;background:var(--accent);width:0%;
+    transition:width .3s;border-radius:2px;}
 </style>
 
-<!-- Floating + button -->
-<button class="fab" onclick="openAddModal()" title="Add a role manually">＋</button>
+<button class="fab" onclick="openAddModal()" title="Add roles manually">＋</button>
 
-<!-- Modal -->
 <div class="modal-backdrop" id="addModal" onclick="if(event.target===this)closeAddModal()">
   <div class="modal-card">
-    <h2>Add a <span>Role</span> manually</h2>
+    <h2>Add <span>Roles</span> manually</h2>
 
-    <div class="modal-field">
-      <label>Company name *</label>
-      <input id="m-co" type="text" placeholder="e.g. Superhuman" />
-    </div>
-    <div class="modal-field">
-      <label>Job description URL *</label>
-      <input id="m-url" type="url" placeholder="https://job-boards.greenhouse.io/..." />
+    <!-- Mode switcher -->
+    <div class="mode-tabs">
+      <button class="mode-tab active" id="tab-single" onclick="switchMode('single')">⊕ Single role</button>
+      <button class="mode-tab" id="tab-bulk" onclick="switchMode('bulk')">⊞ Bulk paste</button>
     </div>
 
-    <!-- Auto-filled preview (shown after fetch) -->
-    <div class="modal-preview" id="m-preview">
-      <div class="pv-row"><span class="pv-label">Role</span><span class="pv-val" id="pv-role">—</span></div>
-      <div class="pv-row"><span class="pv-label">Location</span><span class="pv-val" id="pv-loc">—</span></div>
-      <div class="pv-row"><span class="pv-label">Region</span><span class="pv-val" id="pv-region">—</span></div>
-      <div class="pv-row"><span class="pv-label">Level</span><span class="pv-val" id="pv-lv">—</span></div>
-      <div class="pv-row"><span class="pv-label">Visa</span><span class="pv-val" id="pv-visa">—</span></div>
-      <div class="pv-row"><span class="pv-label">Source</span><span class="pv-val" id="pv-src">—</span></div>
-      <div class="pv-row"><span class="pv-label">Note</span><span class="pv-val" id="pv-note">—</span></div>
+    <!-- ── SINGLE MODE ── -->
+    <div id="mode-single">
+      <div class="modal-field">
+        <label>Company name *</label>
+        <input id="m-co" type="text" placeholder="e.g. Superhuman" />
+      </div>
+      <div class="modal-field">
+        <label>Job description URL *</label>
+        <input id="m-url" type="url" placeholder="https://job-boards.greenhouse.io/..." />
+      </div>
+      <div class="modal-preview" id="m-preview">
+        <div class="pv-row"><span class="pv-label">Role</span><span class="pv-val" id="pv-role">—</span></div>
+        <div class="pv-row"><span class="pv-label">Location</span><span class="pv-val" id="pv-loc">—</span></div>
+        <div class="pv-row"><span class="pv-label">Region</span><span class="pv-val" id="pv-region">—</span></div>
+        <div class="pv-row"><span class="pv-label">Level</span><span class="pv-val" id="pv-lv">—</span></div>
+        <div class="pv-row"><span class="pv-label">Visa</span><span class="pv-val" id="pv-visa">—</span></div>
+        <div class="pv-row"><span class="pv-label">Source</span><span class="pv-val" id="pv-src">—</span></div>
+        <div class="pv-row"><span class="pv-label">Note</span><span class="pv-val" id="pv-note">—</span></div>
+      </div>
+      <div class="modal-status" id="m-status"></div>
+      <div class="modal-actions">
+        <button class="modal-btn cancel" onclick="closeAddModal()">Cancel</button>
+        <button class="modal-btn fetch" id="m-fetch-btn" onclick="fetchAndFill()">🔍 Fetch JD</button>
+        <button class="modal-btn save" id="m-save-btn" onclick="saveManualRole()" disabled>＋ Add to Tracker</button>
+      </div>
     </div>
-    <div class="modal-status" id="m-status"></div>
 
-    <div class="modal-actions">
-      <button class="modal-btn cancel" onclick="closeAddModal()">Cancel</button>
-      <button class="modal-btn fetch" id="m-fetch-btn" onclick="fetchAndFill()">🔍 Fetch JD</button>
-      <button class="modal-btn save" id="m-save-btn" onclick="saveManualRole()" disabled>＋ Add to Tracker</button>
+    <!-- ── BULK MODE ── -->
+    <div id="mode-bulk" style="display:none;">
+      <div class="modal-field">
+        <label>Paste rows — one per line — Tab or comma separated</label>
+        <textarea id="bulk-input" placeholder="Babbel	https://jobs.babbel.com/en/jobs/...
+SumUp	https://www.sumup.com/careers/...
+Bolt	https://bolt.eu/en/careers/...
+
+You can also paste directly from a spreadsheet (Excel / Google Sheets)."></textarea>
+        <div class="bulk-hint">
+          Accepted formats per line: &nbsp;
+          <code>Company[TAB]URL</code> &nbsp;or&nbsp; <code>Company, URL</code> &nbsp;or&nbsp; <code>URL</code> (company auto-detected from URL)
+        </div>
+      </div>
+
+      <!-- Queue preview table -->
+      <div class="bulk-queue" id="bulk-queue">
+        <div class="bq-header">
+          <span>Company</span><span>URL</span><span>Status</span><span></span>
+        </div>
+        <div id="bq-rows"></div>
+      </div>
+
+      <div class="progress-bar" id="bulk-progress">
+        <div class="progress-fill" id="bulk-fill"></div>
+      </div>
+      <div class="modal-status" id="bulk-status"></div>
+
+      <div class="modal-actions">
+        <button class="modal-btn cancel" onclick="closeAddModal()">Cancel</button>
+        <button class="modal-btn parse" onclick="parseBulk()">📋 Parse rows</button>
+        <button class="modal-btn fetch" id="bulk-fetch-btn" onclick="fetchAllBulk()" disabled>🔍 Fetch all JDs</button>
+        <button class="modal-btn save" id="bulk-save-btn" onclick="saveAllBulk()" disabled>＋ Add all to Tracker</button>
+      </div>
     </div>
+
   </div>
 </div>
 
 <script>
-// ── ADD ROLE MODAL ───────────────────────────────────────────────────────────
+// ═══════════════════════════════════════════════════════════════════════════
+//  ADD ROLE MODAL — v2  (single + bulk)
+// ═══════════════════════════════════════════════════════════════════════════
 
-let _manualJob = null;
+let _manualJob  = null;   // single mode
+let _bulkQueue  = [];     // bulk mode: [{co, url, status, job}]
+let _currentMode = 'single';
+
+// ── MODAL OPEN / CLOSE ────────────────────────────────────────────────────
 
 function openAddModal(){
   document.getElementById('addModal').classList.add('open');
-  document.getElementById('m-co').focus();
-  setStatus('','');
+  setTimeout(()=>document.getElementById('m-co').focus(), 50);
 }
+
 function closeAddModal(){
   document.getElementById('addModal').classList.remove('open');
-  // Reset fields
-  ['m-co','m-url'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('m-preview').classList.remove('show');
-  document.getElementById('m-save-btn').disabled=true;
-  setStatus('','');
-  _manualJob=null;
+  resetSingle();
+  resetBulk();
 }
 
-function setStatus(msg,type){
-  const el=document.getElementById('m-status');
-  el.textContent=msg;
-  el.className='modal-status'+(type?' '+type:'');
+function switchMode(mode){
+  _currentMode = mode;
+  document.getElementById('mode-single').style.display = mode==='single' ? '' : 'none';
+  document.getElementById('mode-bulk').style.display   = mode==='bulk'   ? '' : 'none';
+  document.getElementById('tab-single').classList.toggle('active', mode==='single');
+  document.getElementById('tab-bulk').classList.toggle('active',   mode==='bulk');
 }
 
-// ── Region / Level / Visa helpers (mirrors Python logic) ──────────────────
+// ── STATUS HELPERS ────────────────────────────────────────────────────────
+
+function setStatus(id, msg, type){
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.textContent = msg;
+  el.className = 'modal-status' + (type ? ' '+type : '');
+}
+
+// ── REGION / LEVEL / VISA (shared) ────────────────────────────────────────
 
 const REGION_KW={
   'US':['united states','remote us','us remote','new york','san francisco',
-        'seattle','austin','chicago','boston','menlo park','mountain view',
-        'remote - us','los angeles','philadelphia','remote(us'],
+        'seattle','austin','chicago','boston','menlo park','remote - us',
+        'los angeles','philadelphia','remote(us'],
   'EU':['berlin','germany','amsterdam','netherlands','dublin','ireland',
         'london','stockholm','paris','munich','hamburg','europe',
-        'remote eu','eu remote'],
+        'remote eu','eu remote','cologne'],
   '🇮🇳 India':['bengaluru','bangalore','india','mumbai','hyderabad',
                'pune','chennai','noida','gurgaon','gurugram'],
   'Remote':['remote global','worldwide','fully remote','work from anywhere'],
@@ -939,7 +1036,7 @@ const LEVEL_KW={
 const KNOWN_H1B=['google','airbnb','meta','apple','amazon','netflix','stripe',
   'robinhood','verkada','reddit','snap','lyft','uber','doordash','coinbase',
   'spotify','linkedin','microsoft','walmart','target','cvs','expedia',
-  'booking.com','adyen','salesforce','oracle','grammarly','superhuman'];
+  'adyen','salesforce','oracle','grammarly','superhuman'];
 
 function guessRegion(text){
   const t=text.toLowerCase();
@@ -953,129 +1050,134 @@ function guessLevel(title){
     if(kws.some(k=>t.includes(k))) return lv;
   return 'Senior';
 }
-function guessVisa(region,company){
-  const co=company.toLowerCase();
+function guessVisa(region,co){
+  const c=co.toLowerCase();
   if(region==='EU')          return 'EU Blue Card eligible';
   if(region==='🇮🇳 India')  return 'No visa needed';
   if(region==='Remote')      return 'Global remote · verify';
-  if(KNOWN_H1B.some(s=>co.includes(s))) return 'Known H-1B ✓';
+  if(KNOWN_H1B.some(s=>c.includes(s))) return 'Known H-1B ✓';
   return 'Verify H-1B';
 }
 function guessSource(url){
-  if(url.includes('greenhouse.io')) return 'Greenhouse';
-  if(url.includes('lever.co'))      return 'Lever';
-  if(url.includes('ashbyhq.com'))   return 'Ashby';
-  if(url.includes('linkedin.com'))  return 'LinkedIn';
-  if(url.includes('indeed.com'))    return 'Indeed';
-  if(url.includes('wellfound.com')) return 'Wellfound';
-  if(url.includes('builtin.com'))   return 'BuiltIn';
+  if(url.includes('greenhouse.io'))  return 'Greenhouse';
+  if(url.includes('lever.co'))       return 'Lever';
+  if(url.includes('ashbyhq.com'))    return 'Ashby';
+  if(url.includes('linkedin.com'))   return 'LinkedIn';
+  if(url.includes('indeed.com'))     return 'Indeed';
+  if(url.includes('wellfound.com'))  return 'Wellfound';
+  if(url.includes('builtin.com'))    return 'BuiltIn';
+  if(url.includes('smartrecruiters')) return 'SmartRecruiters';
+  if(url.includes('personio.com'))   return 'Personio';
+  if(url.includes('babbel.com'))     return 'Babbel Careers';
+  if(url.includes('sumup.com'))      return 'SumUp Careers';
+  if(url.includes('bolt.eu'))        return 'Bolt Careers';
   return 'Direct';
 }
-
-// ── Fetch JD page to extract role title / location / tech ─────────────────
-
-async function fetchAndFill(){
-  const co  = document.getElementById('m-co').value.trim();
-  const url = document.getElementById('m-url').value.trim();
-  if(!co)  { setStatus('Enter company name first','err'); return; }
-  if(!url) { setStatus('Enter a JD URL first','err'); return; }
-
-  const btn=document.getElementById('m-fetch-btn');
-  btn.disabled=true;
-  setStatus('Fetching JD…','');
-
-  try {
-    // Use a CORS-friendly proxy to fetch the page text
-    // We'll try direct fetch first (works for many ATSes), fallback to allorigins
-    let text='';
-    try {
-      const r = await fetch(url, {mode:'cors',signal:AbortSignal.timeout(8000)});
-      text = await r.text();
-    } catch(e) {
-      // Fallback: allorigins proxy (public, free)
-      const proxy = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-      const r = await fetch(proxy, {signal:AbortSignal.timeout(12000)});
-      const d = await r.json();
-      text = d.contents || '';
-    }
-
-    if(!text){ setStatus('Could not fetch JD — fill manually below','err'); fallbackFill(co,url); return; }
-
-    // Strip HTML tags for text parsing
-    const plain = text.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ');
-
-    // Extract title from <title> tag or og:title
-    let role = '';
-    const titleMatch = text.match(/<title[^>]*>([^<]{4,120})<\/title>/i);
-    if(titleMatch){
-      role = titleMatch[1]
-        .split(/\bat\b/i)[0]  // "Senior Android Engineer at Company" → take first part
-        .replace(/\s*[\|–\-]\s*.*/,'')  // strip " | Greenhouse" etc
-        .trim();
-    }
-    // If title looks bad, try og:title
-    if(!role || role.length < 4){
-      const og = text.match(/<meta[^>]*property="og:title"[^>]*content="([^"]{4,120})"/i);
-      if(og) role = og[1].split(/\bat\b/i)[0].trim();
-    }
-    // Final fallback
-    if(!role || role.length < 4) role = `Senior Android Engineer`;
-
-    // Extract location — look for common patterns
-    let loc = '';
-    const locPatterns = [
-      /(?:location|office)[^>]*>([^<]{3,60})</i,
-      /(?:Remote|Hybrid)\s*[-–·]\s*([A-Za-z,\s]{3,40})/,
-      /([A-Z][a-z]+(?:,\s*[A-Z]{2})?)\s*(?:·|•|\|)\s*(?:Remote|Full.time)/,
-    ];
-    for(const pat of locPatterns){
-      const m = plain.match(pat);
-      if(m && m[1] && m[1].trim().length > 2){ loc = m[1].trim(); break; }
-    }
-    if(!loc){
-      // look for city names in plain text
-      const cities = ['Remote','Berlin','Amsterdam','Dublin','London','New York',
-                      'San Francisco','Seattle','Bengaluru','Bangalore','Mumbai'];
-      for(const city of cities){
-        if(plain.toLowerCase().includes(city.toLowerCase())){ loc = city; break; }
-      }
-    }
-    if(!loc) loc='Remote';
-
-    // Extract tech keywords for note
-    const techKWs=['Kotlin','Jetpack Compose','Compose','KMP','MVI','MVVM',
-                   'Hilt','Coroutines','Flow','Clean Architecture','Multiplatform',
-                   'Firebase','Accessibility','WebSocket'];
-    const foundTech = techKWs.filter(k=>plain.toLowerCase().includes(k.toLowerCase()));
-    const note = foundTech.slice(0,4).join(' · ') || 'Manually added';
-
-    const combined = `${role} ${co} ${loc} ${plain.slice(0,300)}`;
-    const region = guessRegion(combined);
-    const level  = guessLevel(role);
-    const visa   = guessVisa(region, co);
-    const src    = guessSource(url);
-
-    _manualJob = { co, role, loc, region, level, visa, src, note, url };
-    showPreview(_manualJob);
-    setStatus('✓ JD fetched — review and save','ok');
-    document.getElementById('m-save-btn').disabled=false;
-
-  } catch(err){
-    setStatus('Fetch failed — check URL or try again','err');
-    fallbackFill(co, url);
-  }
-  btn.disabled=false;
+function guessCoFromUrl(url){
+  try{
+    const host = new URL(url).hostname.replace('www.','').replace('jobs.','');
+    return host.split('.')[0].replace(/-/g,' ')
+      .replace(/\b\w/g,c=>c.toUpperCase());
+  } catch(e){ return ''; }
 }
 
-function fallbackFill(co, url){
-  // Best-guess without fetching
-  const region = guessRegion(co+' '+url);
-  const visa   = guessVisa(region, co);
-  const src    = guessSource(url);
-  _manualJob = {co, role:'Senior Android Engineer', loc:'Remote',
-                region, level:'Senior', visa, src, note:'Manually added', url};
-  showPreview(_manualJob);
-  document.getElementById('m-save-btn').disabled=false;
+// ── FETCH JD (shared) ─────────────────────────────────────────────────────
+
+async function fetchJD(url){
+  let text='';
+  try{
+    const r=await fetch(url,{mode:'cors',signal:AbortSignal.timeout(8000)});
+    text=await r.text();
+  } catch(e){
+    try{
+      const proxy=`https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+      const r=await fetch(proxy,{signal:AbortSignal.timeout(12000)});
+      const d=await r.json(); text=d.contents||'';
+    } catch(e2){ text=''; }
+  }
+  return text;
+}
+
+function parseJDText(text, co, url){
+  const plain = text.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ');
+
+  // Role title
+  let role='';
+  const tm=text.match(/<title[^>]*>([^<]{4,120})<\/title>/i);
+  if(tm) role=tm[1].split(/\bat\b/i)[0].replace(/\s*[\|–\-]\s*.*/,'').trim();
+  if(!role){
+    const og=text.match(/<meta[^>]*property="og:title"[^>]*content="([^"]{4,120})"/i);
+    if(og) role=og[1].split(/\bat\b/i)[0].trim();
+  }
+  if(!role||role.length<4) role='Senior Android Engineer';
+
+  // Location
+  let loc='';
+  const locPats=[
+    /(?:location|office)[^>]*>([^<]{3,60})</i,
+    /(?:Remote|Hybrid)\s*[-–·]\s*([A-Za-z,\s]{3,40})/,
+  ];
+  for(const p of locPats){
+    const m=plain.match(p);
+    if(m&&m[1]&&m[1].trim().length>2){loc=m[1].trim();break;}
+  }
+  if(!loc){
+    for(const city of ['Remote','Berlin','Amsterdam','Dublin','London',
+                        'New York','San Francisco','Seattle','Bengaluru',
+                        'Bangalore','Mumbai','Cologne','Munich','Hamburg']){
+      if(plain.toLowerCase().includes(city.toLowerCase())){loc=city;break;}
+    }
+  }
+  if(!loc) loc='Remote';
+
+  // Tech keywords
+  const techKWs=['Kotlin','Jetpack Compose','Compose','KMP','MVI','MVVM',
+                 'Hilt','Coroutines','Flow','Clean Architecture','Firebase',
+                 'Multiplatform','WebSocket','Accessibility'];
+  const techs=techKWs.filter(k=>plain.toLowerCase().includes(k.toLowerCase()));
+  const note=techs.slice(0,4).join(' · ')||'Manually added';
+
+  const combined=`${role} ${co} ${loc} ${plain.slice(0,400)}`;
+  const region=guessRegion(combined);
+  const level=guessLevel(role);
+  const visa=guessVisa(region,co);
+  const src=guessSource(url);
+
+  return {co,role,loc,region,level,visa,src,note,url};
+}
+
+function fallbackJob(co, url){
+  const region=guessRegion(co+' '+url);
+  return {co,role:'Senior Android Engineer',loc:'Remote',
+          region,level:'Senior',visa:guessVisa(region,co),
+          src:guessSource(url),note:'Manually added',url};
+}
+
+// ── PUSH JOB TO TRACKER ───────────────────────────────────────────────────
+
+function pushJobToTracker(j){
+  const today=new Date().toISOString().slice(0,10);
+  const entry={...j,added:today,idx:RAW.length+1,status:'Researching',isNew:true};
+  RAW.push(entry);
+  jobs.push({...entry});
+}
+
+function finaliseRender(){
+  // Re-index
+  RAW.forEach((r,i)=>{r.idx=i+1; jobs[i]={...r,idx:i+1};});
+  render(); renderStats();
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+//  SINGLE MODE
+// ══════════════════════════════════════════════════════════════════════════
+
+function resetSingle(){
+  ['m-co','m-url'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('m-preview').classList.remove('show');
+  document.getElementById('m-save-btn').disabled=true;
+  setStatus('m-status','','');
+  _manualJob=null;
 }
 
 function showPreview(j){
@@ -1089,54 +1191,194 @@ function showPreview(j){
   document.getElementById('m-preview').classList.add('show');
 }
 
+async function fetchAndFill(){
+  const co  = document.getElementById('m-co').value.trim();
+  const url = document.getElementById('m-url').value.trim();
+  if(!co)  {setStatus('m-status','Enter company name first','err');return;}
+  if(!url) {setStatus('m-status','Enter a JD URL first','err');return;}
+
+  const btn=document.getElementById('m-fetch-btn');
+  btn.disabled=true;
+  setStatus('m-status','Fetching JD…','');
+
+  const text = await fetchJD(url);
+  if(text){
+    _manualJob = parseJDText(text, co, url);
+  } else {
+    _manualJob = fallbackJob(co, url);
+    setStatus('m-status','Fetch failed — used best-guess','err');
+  }
+
+  showPreview(_manualJob);
+  if(text) setStatus('m-status','✓ JD fetched — review and save','ok');
+  document.getElementById('m-save-btn').disabled=false;
+  btn.disabled=false;
+}
+
 function saveManualRole(){
-  if(!_manualJob){ setStatus('Fetch JD first','err'); return; }
-
-  const today = new Date().toISOString().slice(0,10);
-  const j = _manualJob;
-
-  const newEntry = {
-    added: today,
-    co:    j.co,
-    role:  j.role,
-    loc:   j.loc,
-    region:j.region,
-    lv:    j.level,
-    visa:  j.visa,
-    note:  j.note,
-    src:   j.src,
-    url:   j.url,
-    idx:   RAW.length + 1,
-    status:'Researching',
-    isNew: true,
-  };
-
-  // Add to RAW and re-render
-  RAW.push(newEntry);
-  // Re-map with updated indices
-  window._jobs = RAW.map((r,i)=>({
-    ...r,
-    idx:i+1,
-    status: (() => {
-      try{ return JSON.parse(localStorage.getItem('abhi_android_tracker_v3')||'{}')[i]||r.status||'Researching'; }
-      catch(e){ return r.status||'Researching'; }
-    })()
-  }));
-  // Re-assign global jobs reference used by render()
-  jobs.length = 0;
-  window._jobs.forEach(j=>jobs.push(j));
-
-  render();
-  renderStats();
+  if(!_manualJob){setStatus('m-status','Fetch JD first','err');return;}
+  pushJobToTracker(_manualJob);
+  finaliseRender();
   closeAddModal();
+  flashLastRow();
+}
 
-  // Flash the new row
+// ══════════════════════════════════════════════════════════════════════════
+//  BULK MODE
+// ══════════════════════════════════════════════════════════════════════════
+
+function resetBulk(){
+  document.getElementById('bulk-input').value='';
+  document.getElementById('bq-rows').innerHTML='';
+  document.getElementById('bulk-queue').classList.remove('show');
+  document.getElementById('bulk-fetch-btn').disabled=true;
+  document.getElementById('bulk-save-btn').disabled=true;
+  document.getElementById('bulk-progress').classList.remove('show');
+  document.getElementById('bulk-fill').style.width='0%';
+  setStatus('bulk-status','','');
+  _bulkQueue=[];
+}
+
+function parseBulk(){
+  const raw = document.getElementById('bulk-input').value.trim();
+  if(!raw){setStatus('bulk-status','Paste some rows first','err');return;}
+
+  const lines = raw.split('\n').map(l=>l.trim()).filter(Boolean);
+  _bulkQueue = [];
+
+  for(const line of lines){
+    // Detect separator: tab first, then comma, then space-before-http
+    let co='', url='';
+    if(line.includes('\t')){
+      const parts=line.split('\t');
+      co=parts[0].trim(); url=parts.slice(1).join('').trim();
+    } else if(line.match(/^https?:\/\//)){
+      // URL only — guess company from URL
+      url=line.trim(); co=guessCoFromUrl(url);
+    } else {
+      // Try comma split
+      const commaIdx=line.indexOf(',');
+      if(commaIdx>0){
+        co=line.slice(0,commaIdx).trim();
+        url=line.slice(commaIdx+1).trim();
+      } else {
+        // Last resort: split on first http
+        const httpIdx=line.indexOf('http');
+        if(httpIdx>0){co=line.slice(0,httpIdx).trim(); url=line.slice(httpIdx).trim();}
+        else {co=line; url='';}
+      }
+    }
+
+    // Validate URL
+    let validUrl=false;
+    try{new URL(url); validUrl=true;}catch(e){}
+
+    _bulkQueue.push({co:co||guessCoFromUrl(url)||'Unknown',
+                     url, status: validUrl?'pending':'invalid', job:null});
+  }
+
+  renderBulkQueue();
+  document.getElementById('bulk-queue').classList.add('show');
+  const valid=_bulkQueue.filter(r=>r.status==='pending').length;
+  setStatus('bulk-status',`${_bulkQueue.length} rows parsed · ${valid} valid`,'');
+  document.getElementById('bulk-fetch-btn').disabled = valid===0;
+  document.getElementById('bulk-save-btn').disabled  = true;
+}
+
+function renderBulkQueue(){
+  const container=document.getElementById('bq-rows');
+  container.innerHTML=_bulkQueue.map((r,i)=>`
+    <div class="bq-row" id="bq-row-${i}">
+      <span class="bq-co" title="${r.co}">${r.co}</span>
+      <span class="bq-url" title="${r.url}">${r.url||'—'}</span>
+      <span class="bq-status ${r.status}" id="bq-status-${i}">
+        ${r.status==='pending'?'⏳ queued'
+         :r.status==='ok'?'✓ fetched'
+         :r.status==='invalid'?'✗ bad URL'
+         :r.status==='error'?'✗ failed'
+         :'—'}
+      </span>
+      <span class="bq-del" onclick="removeBulkRow(${i})" title="Remove">✕</span>
+    </div>`).join('');
+}
+
+function removeBulkRow(i){
+  _bulkQueue.splice(i,1);
+  renderBulkQueue();
+  const valid=_bulkQueue.filter(r=>r.status==='pending'||r.status==='ok').length;
+  document.getElementById('bulk-fetch-btn').disabled=_bulkQueue.filter(r=>r.status==='pending').length===0;
+  document.getElementById('bulk-save-btn').disabled=_bulkQueue.filter(r=>r.status==='ok').length===0;
+}
+
+function setBulkRowStatus(i, status, label){
+  _bulkQueue[i].status=status;
+  const el=document.getElementById(`bq-status-${i}`);
+  if(el){el.className=`bq-status ${status}`;el.textContent=label;}
+}
+
+async function fetchAllBulk(){
+  const pending=_bulkQueue.filter(r=>r.status==='pending');
+  if(!pending.length) return;
+
+  document.getElementById('bulk-fetch-btn').disabled=true;
+  document.getElementById('bulk-save-btn').disabled=true;
+
+  const prog=document.getElementById('bulk-progress');
+  const fill=document.getElementById('bulk-fill');
+  prog.classList.add('show');
+
+  let done=0;
+  const total=pending.length;
+
+  for(let i=0;i<_bulkQueue.length;i++){
+    const r=_bulkQueue[i];
+    if(r.status!=='pending') continue;
+
+    setBulkRowStatus(i,'pending','⏳ fetching…');
+    setStatus('bulk-status',`Fetching ${done+1} of ${total}…`,'');
+
+    const text=await fetchJD(r.url);
+    if(text){
+      r.job=parseJDText(text, r.co, r.url);
+      setBulkRowStatus(i,'ok','✓ fetched');
+    } else {
+      r.job=fallbackJob(r.co, r.url);
+      setBulkRowStatus(i,'error','⚠ best-guess');
+    }
+
+    done++;
+    fill.style.width=`${Math.round(done/total*100)}%`;
+    await new Promise(res=>setTimeout(res,400)); // small delay between fetches
+  }
+
+  const ok=_bulkQueue.filter(r=>r.status==='ok'||r.status==='error').length;
+  setStatus('bulk-status',`✓ Done — ${ok} roles ready to add`,'ok');
+  document.getElementById('bulk-save-btn').disabled=ok===0;
+}
+
+function saveAllBulk(){
+  const toSave=_bulkQueue.filter(r=>r.job && (r.status==='ok'||r.status==='error'));
+  if(!toSave.length){setStatus('bulk-status','Nothing to save yet','err');return;}
+
+  toSave.forEach(r=>pushJobToTracker(r.job));
+  finaliseRender();
+  closeAddModal();
+  flashLastRow(toSave.length);
+  setStatus('bulk-status','','');
+}
+
+// ── FLASH ANIMATION ───────────────────────────────────────────────────────
+
+function flashLastRow(count=1){
   setTimeout(()=>{
-    const rows = document.querySelectorAll('#jobTable tbody tr');
-    const last = rows[rows.length-1];
-    if(last){ last.style.background='rgba(74,222,128,.08)';
-      setTimeout(()=>last.style.background='',2000); }
-  },100);
+    const rows=[...document.querySelectorAll('#jobTable tbody tr')];
+    rows.slice(-count).forEach(row=>{
+      row.style.transition='background .3s';
+      row.style.background='rgba(74,222,128,.1)';
+      setTimeout(()=>row.style.background='',2200);
+    });
+    if(rows.length) rows[rows.length-1].scrollIntoView({behavior:'smooth',block:'center'});
+  },120);
 }
 </script>
 </body>
