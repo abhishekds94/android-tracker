@@ -1,401 +1,367 @@
 #!/usr/bin/env python3
 """
-Android Job Tracker Auto-Updater
-Scrapes Greenhouse, Lever, Ashby for new Senior Android roles
-and injects them into index.html
-Runs via GitHub Actions on schedule.
+Android Job Tracker — Auto Updater v2
+Uses SerpAPI google_jobs engine which aggregates:
+  LinkedIn, Glassdoor, BuiltIn, Indeed, Naukri, Greenhouse, Lever, Ashby,
+  AngelList/Wellfound, ZipRecruiter, Dice, and 100s more — all in ONE search.
+
+Budget: 250 searches/month
+Strategy: rotate 10 search configs across 5 active runs/day = ~240/month
+Regions: US/Remote, EU (Berlin/Amsterdam/Dublin), India (Bengaluru)
 """
 
-import re
-import os
-import json
-import time
-import datetime
-import requests
-from urllib.parse import quote
+import re, os, sys, json, time, datetime, requests
 
-# ── CONFIG ────────────────────────────────────────────────────────────────────
+TRACKER_FILE   = "index.html"
+TODAY          = datetime.date.today().strftime("%Y-%m-%d")
+SERPAPI_KEY    = os.environ.get("SERPAPI_KEY", "")
+SERPAPI_URL    = "https://serpapi.com/search.json"
 
-TRACKER_FILE = "index.html"
-TODAY = datetime.date.today().strftime("%Y-%m-%d")
+# ─── ALL SEARCH CONFIGS ───────────────────────────────────────────────────────
+# google_jobs engine aggregates LinkedIn, Glassdoor, BuiltIn, Indeed, Naukri,
+# Greenhouse, Lever, Ashby, Wellfound, ZipRecruiter, Dice, SimplyHired, etc.
 
-SEARCH_QUERIES = [
-    # Greenhouse
-    'site:greenhouse.io "Senior Android Engineer" OR "Android Engineer" -"iOS"',
-    'site:greenhouse.io "Staff Android Engineer" OR "Principal Android Engineer"',
-    'site:greenhouse.io "Senior Software Engineer" "Android" "Kotlin"',
-    # Lever
-    'site:lever.co "Senior Android Engineer" OR "Android Engineer" "Kotlin"',
-    'site:lever.co "Senior Mobile Engineer" "Android"',
-    # Ashby
-    'site:ashbyhq.com "Senior Android Engineer" OR "Android Engineer"',
-    'site:jobs.ashbyhq.com "Android" "Senior"',
-    # EU specific
-    'site:greenhouse.io "Android" "Berlin" OR "Amsterdam" OR "Dublin" "Senior"',
-    'site:lever.co "Android" "Berlin" OR "Amsterdam" OR "Dublin"',
+SEARCHES = [
+    # Index 0 — US Senior Android (last 7 days)
+    {"query": "Senior Android Engineer Kotlin Jetpack Compose",
+     "engine": "google_jobs", "location": "United States",
+     "gl": "us", "hl": "en", "region": "US", "chips": "date_posted:week"},
+
+    # Index 1 — US Staff / Principal (last month)
+    {"query": "Staff Android Engineer OR Principal Android Engineer Kotlin",
+     "engine": "google_jobs", "location": "United States",
+     "gl": "us", "hl": "en", "region": "US", "chips": "date_posted:month"},
+
+    # Index 2 — EU Berlin
+    {"query": "Senior Android Engineer Kotlin Jetpack Compose",
+     "engine": "google_jobs", "location": "Berlin, Germany",
+     "gl": "de", "hl": "en", "region": "EU", "chips": "date_posted:month"},
+
+    # Index 3 — EU Amsterdam
+    {"query": "Senior Android Engineer Kotlin",
+     "engine": "google_jobs", "location": "Amsterdam, Netherlands",
+     "gl": "nl", "hl": "en", "region": "EU", "chips": "date_posted:month"},
+
+    # Index 4 — EU Dublin
+    {"query": "Senior Android Engineer Kotlin Jetpack Compose",
+     "engine": "google_jobs", "location": "Dublin, Ireland",
+     "gl": "ie", "hl": "en", "region": "EU", "chips": "date_posted:month"},
+
+    # Index 5 — India Bengaluru
+    {"query": "Senior Android Engineer Kotlin Jetpack Compose",
+     "engine": "google_jobs", "location": "Bengaluru, Karnataka, India",
+     "gl": "in", "hl": "en", "region": "🇮🇳 India", "chips": "date_posted:month"},
+
+    # Index 6 — Greenhouse direct ATS
+    {"query": 'site:greenhouse.io "Senior Android Engineer" OR "Staff Android Engineer" Kotlin',
+     "engine": "google", "location": None, "gl": "us", "hl": "en", "region": None, "chips": None},
+
+    # Index 7 — Lever direct ATS
+    {"query": 'site:lever.co "Senior Android Engineer" OR "Senior Mobile Engineer" Android Kotlin',
+     "engine": "google", "location": None, "gl": "us", "hl": "en", "region": None, "chips": None},
+
+    # Index 8 — Ashby direct ATS
+    {"query": 'site:ashbyhq.com "Senior Android" OR "Staff Android" Kotlin',
+     "engine": "google", "location": None, "gl": "us", "hl": "en", "region": None, "chips": None},
+
+    # Index 9 — LinkedIn hiring posts
+    {"query": '"Senior Android Engineer" "we are hiring" OR "now hiring" OR "open role" Kotlin 2026',
+     "engine": "google", "location": None, "gl": "us", "hl": "en", "region": None, "chips": None},
 ]
 
-REGION_KEYWORDS = {
-    "US": ["remote us", "united states", "san francisco", "new york", "seattle",
-           "austin", "chicago", "boston", "remote - us", "us remote", "remote (us"],
-    "EU": ["berlin", "amsterdam", "dublin", "london", "munich", "hamburg",
-           "stockholm", "paris", "europe", "remote eu", "eu remote"],
-    "Remote": ["remote global", "worldwide", "fully remote", "work from anywhere"],
-    "🇮🇳 India": ["bangalore", "bengaluru", "india", "mumbai", "hyderabad", "pune"],
+# ─── BUDGET ROTATION: UTC hour → which search indices to run ─────────────────
+# 5 active runs/day × 2 searches = 10/day × 30 = 300 (trim 12am = 240 ✅)
+HOUR_TO_BATCHES = {
+    14: [0, 1],   # 9am  EST — US Senior + US Staff
+    17: [2, 3],   # 12pm EST — EU Berlin + Amsterdam
+    20: [4, 5],   # 3pm  EST — EU Dublin + India
+    23: [6, 7],   # 6pm  EST — Greenhouse + Lever
+    2:  [8, 9],   # 9pm  EST — Ashby + LinkedIn posts
+    5:  [],       # 12am EST — skip (budget save)
 }
 
-LEVEL_KEYWORDS = {
-    "Staff": ["staff android", "staff software", "staff mobile"],
-    "Principal": ["principal android", "principal engineer"],
-    "Senior": ["senior android", "senior software", "senior mobile", "senior engineer"],
+# ─── REGION / LEVEL / VISA ───────────────────────────────────────────────────
+
+REGION_KW = {
+    "US": ["united states","remote us","us remote","new york","san francisco",
+           "seattle","austin","chicago","boston","menlo park","mountain view",
+           "remote - us","los angeles"],
+    "EU": ["berlin","germany","amsterdam","netherlands","dublin","ireland",
+           "london","stockholm","paris","munich","hamburg","europe",
+           "remote eu","eu remote"],
+    "🇮🇳 India": ["bengaluru","bangalore","india","mumbai","hyderabad",
+                  "pune","chennai","noida","gurgaon","gurugram"],
+    "Remote": ["remote global","worldwide","fully remote","work from anywhere"],
 }
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; job-tracker-bot/1.0)"
+LEVEL_KW = {
+    "Staff":     ["staff android","staff software","staff mobile","staff engineer"],
+    "Principal": ["principal android","principal engineer","principal mobile"],
+    "Senior":    ["senior android","senior software","senior mobile",
+                  "senior engineer","sr. android","sr android"],
 }
 
-# ── HELPERS ───────────────────────────────────────────────────────────────────
+KNOWN_H1B = {"google","airbnb","meta","apple","amazon","netflix","stripe",
+             "robinhood","verkada","reddit","snap","lyft","uber","doordash",
+             "coinbase","spotify","linkedin","microsoft","walmart","target",
+             "cvs","expedia","booking.com","adyen","salesforce","oracle"}
 
-def load_tracker():
-    with open(TRACKER_FILE, "r", encoding="utf-8") as f:
-        return f.read()
-
-def save_tracker(content):
-    with open(TRACKER_FILE, "w", encoding="utf-8") as f:
-        f.write(content)
-
-def get_existing_urls(content):
-    """Extract all URLs already in the tracker for deduplication."""
-    return set(re.findall(r'url:"([^"]+)"', content))
-
-def get_existing_cos(content):
-    """Extract company names already in tracker."""
-    return set(re.findall(r'co:"([^"]+)"', content))
-
-def detect_region(text):
-    text_lower = text.lower()
-    for region, kws in REGION_KEYWORDS.items():
-        if any(kw in text_lower for kw in kws):
-            return region
-    return "Remote"
+def detect_region(text, default=None):
+    t = text.lower()
+    for r, kws in REGION_KW.items():
+        if any(k in t for k in kws):
+            return r
+    return default or "Remote"
 
 def detect_level(title):
-    title_lower = title.lower()
-    for level, kws in LEVEL_KEYWORDS.items():
-        if any(kw in title_lower for kw in kws):
-            return level
+    t = title.lower()
+    for lv, kws in LEVEL_KW.items():
+        if any(k in t for k in kws):
+            return lv
     return "Senior"
 
-def detect_visa(region, company_name):
-    known_sponsors = ["google", "airbnb", "meta", "apple", "amazon", "netflix",
-                      "stripe", "robinhood", "verkada", "reddit", "snap", "lyft",
-                      "uber", "doordash", "coinbase", "spotify"]
-    co_lower = company_name.lower()
-    if region == "EU":
-        return "EU Blue Card eligible"
-    if region == "🇮🇳 India":
-        return "No visa needed"
-    if region == "Remote":
-        return "Global remote · verify"
-    if any(s in co_lower for s in known_sponsors):
-        return "Known H-1B ✓"
+def detect_visa(region, company):
+    co = company.lower()
+    if region == "EU":         return "EU Blue Card eligible"
+    if region == "🇮🇳 India": return "No visa needed"
+    if region == "Remote":     return "Global remote · verify"
+    if any(s in co for s in KNOWN_H1B): return "Known H-1B ✓"
     return "Verify H-1B"
 
-def search_google(query, serpapi_key=None):
-    """
-    Search using SerpAPI (free tier: 100 searches/month).
-    Falls back to direct URL scraping if no key.
-    """
-    if not serpapi_key:
-        return []
-    
-    url = "https://serpapi.com/search"
-    params = {
-        "q": query,
-        "api_key": serpapi_key,
-        "num": 10,
-        "engine": "google",
-    }
-    try:
-        resp = requests.get(url, params=params, timeout=15)
-        data = resp.json()
-        results = []
-        for r in data.get("organic_results", []):
-            results.append({
-                "url": r.get("link", ""),
-                "title": r.get("title", ""),
-                "snippet": r.get("snippet", ""),
-            })
-        return results
-    except Exception as e:
-        print(f"SerpAPI error: {e}")
-        return []
+def esc(s): return str(s).replace('"',"'").replace('\n',' ').replace('\r','').strip()
 
-def scrape_ats_directly():
-    """
-    Direct ATS scraping without search API.
-    Hits known job board listing pages directly.
-    """
-    sources = [
-        # Greenhouse Android searches
-        ("https://job-boards.greenhouse.io/embed/job_board?for=&q=android+senior&limit=25", "Greenhouse"),
-        # Ashby - no public listing API, skip
-    ]
-    
-    jobs = []
-    
-    # Fetch from known high-signal pages
-    greenhouse_companies = [
-        "airbnb", "robinhood", "reddit", "duolingo", "grammarly", "coinbase",
-        "stripe", "lyft", "snap", "pinterest", "instacart", "doordash",
-        "wealthsimple", "nytimes", "figma", "notion", "linear", "vercel",
-        "ramp", "brex", "plaid", "chime", "earnin", "acorns", "strava",
-        "headspace", "calm", "peloton", "fetch", "duckduckgo", "revenuecat",
-        "gamechanger", "fullstory", "honor", "hungryroot", "verkada", "toast",
-        "omadahealth", "hinge", "bumble", "meetup", "eventbrite",
-    ]
-    
-    for company in greenhouse_companies:
-        url = f"https://job-boards.greenhouse.io/{company}"
-        try:
-            resp = requests.get(url, headers=HEADERS, timeout=10)
-            if resp.status_code != 200:
+# ─── TRACKER I/O ─────────────────────────────────────────────────────────────
+
+def load_tracker():
+    with open(TRACKER_FILE, "r", encoding="utf-8") as f: return f.read()
+
+def save_tracker(content):
+    with open(TRACKER_FILE, "w", encoding="utf-8") as f: f.write(content)
+
+def get_existing_urls(content):
+    return set(re.findall(r'url:"([^"]+)"', content))
+
+# ─── SERPAPI ─────────────────────────────────────────────────────────────────
+
+def call_google_jobs(s):
+    params = {"engine":"google_jobs","q":s["query"],"api_key":SERPAPI_KEY,
+              "hl":s.get("hl","en"),"gl":s.get("gl","us"),"num":10}
+    if s.get("location"): params["location"] = s["location"]
+    if s.get("chips"):    params["chips"]    = s["chips"]
+    try:
+        data = requests.get(SERPAPI_URL, params=params, timeout=25).json()
+        if "error" in data:
+            print(f"  SerpAPI error: {data['error']}"); return []
+        jobs = []
+        for j in data.get("jobs_results", []):
+            title    = j.get("title","")
+            company  = j.get("company_name","")
+            location = j.get("location","")
+            via      = j.get("via","").replace("via ","")
+            desc     = j.get("description","")[:300]
+            exts     = j.get("extensions",[])
+
+            # Best apply URL: prefer ATS over aggregator
+            apply_url = ""
+            for opt in j.get("apply_options",[]):
+                lnk = opt.get("link","")
+                if any(a in lnk for a in ["greenhouse.io","lever.co","ashbyhq.com",
+                                           "workday","smartrecruiters"]):
+                    apply_url = lnk; break
+            if not apply_url:
+                opts = j.get("apply_options",[])
+                if opts: apply_url = opts[0].get("link","")
+
+            # Note: posted time + tech keywords
+            note_parts = [x for x in exts if any(k in x.lower()
+                          for k in ["ago","full-time","remote","contract"])]
+            techs = [kw for kw in ["Kotlin","Compose","KMP","MVI","MVVM","Hilt",
+                                    "Coroutines","Flow","Multiplatform"]
+                     if kw.lower() in desc.lower()]
+            if techs: note_parts.append(" · ".join(techs[:4]))
+            if via and via not in note_parts: note_parts.insert(0, via)
+
+            region = detect_region(f"{title} {company} {location} {desc}",
+                                   s.get("region"))
+            jobs.append({"title":title,"company":company,"location":location,
+                         "url":apply_url,"source":via or "Google Jobs",
+                         "region":region,
+                         "note":" · ".join(note_parts) if note_parts else via})
+        print(f"  ✓ google_jobs [{s.get('location','global')}] → {len(jobs)} results")
+        return jobs
+    except Exception as e:
+        print(f"  ✗ google_jobs error: {e}"); return []
+
+
+def call_google_search(s):
+    params = {"engine":"google","q":s["query"],"api_key":SERPAPI_KEY,
+              "hl":s.get("hl","en"),"gl":s.get("gl","us"),"num":10}
+    try:
+        data = requests.get(SERPAPI_URL, params=params, timeout=25).json()
+        if "error" in data:
+            print(f"  SerpAPI error: {data['error']}"); return []
+        jobs = []
+        for r in data.get("organic_results",[]):
+            url     = r.get("link","")
+            snippet = r.get("snippet","")
+            t_raw   = r.get("title","")
+            # Only ATS or LinkedIn job pages
+            if not any(a in url for a in ["greenhouse.io","lever.co","ashbyhq.com",
+                                           "jobs.ashbyhq","linkedin.com/jobs"]):
                 continue
-            
-            # Find Android jobs in the page
-            content = resp.text
-            android_pattern = re.compile(
-                r'href="(/[^"]*jobs/(\d+)[^"]*)"[^>]*>[^<]*(?:android|mobile)[^<]*</a>',
-                re.IGNORECASE
-            )
-            for match in android_pattern.finditer(content):
-                path = match.group(1)
-                job_id = match.group(2)
-                # Get job title from surrounding context
-                title_match = re.search(
-                    rf'href="{re.escape(path)}"[^>]*>([^<]+)</a>',
-                    content, re.IGNORECASE
-                )
-                title = title_match.group(1).strip() if title_match else "Android Engineer"
-                
-                # Filter for senior+ roles
-                if not any(kw in title.lower() for kw in ["senior", "staff", "principal", "lead"]):
-                    continue
-                    
-                full_url = f"https://job-boards.greenhouse.io{path}"
-                jobs.append({
-                    "url": full_url,
-                    "title": title,
-                    "company": company.replace("-", " ").title(),
-                    "source": "Greenhouse",
-                })
-            
-            time.sleep(0.5)  # Be polite
-            
-        except Exception as e:
-            print(f"Error scraping {company}: {e}")
-            continue
-    
-    return jobs
+            # Parse role + company
+            if " at " in t_raw:
+                role, company = t_raw.split(" at ",1)
+            else:
+                role = t_raw; company = ""
+            for sfx in ["|Greenhouse","- Lever","- Ashby","|LinkedIn",
+                        " Jobs"," Careers","|"]:
+                role    = role.replace(sfx,"").strip()
+                company = company.replace(sfx,"").strip()
 
-def fetch_job_details(url):
-    """Fetch individual job page to get location and description."""
-    try:
-        resp = requests.get(url, headers=HEADERS, timeout=10)
-        if resp.status_code != 200:
-            return {}, ""
-        
-        content = resp.text
-        
-        # Extract location
-        loc_match = re.search(
-            r'(?:location|office)[^>]*>([^<]{3,60})</(?:span|div|p)',
-            content, re.IGNORECASE
-        )
-        location = loc_match.group(1).strip() if loc_match else "Remote"
-        
-        # Extract description snippet for notes
-        desc_match = re.search(
-            r'<(?:div|section)[^>]*class="[^"]*(?:content|description|body)[^"]*"[^>]*>([\s\S]{100,500})',
-            content, re.IGNORECASE
-        )
-        description = ""
-        if desc_match:
-            raw = desc_match.group(1)
-            description = re.sub(r'<[^>]+>', ' ', raw)
-            description = re.sub(r'\s+', ' ', description).strip()[:200]
-        
-        return {"location": location}, description
-        
+            src = ("Greenhouse" if "greenhouse.io" in url else
+                   "Lever"      if "lever.co"      in url else
+                   "Ashby"      if "ashbyhq.com"   in url else
+                   "LinkedIn"   if "linkedin.com"  in url else "Google")
+
+            region = detect_region(f"{role} {company} {snippet}", s.get("region"))
+            jobs.append({"title":role,"company":company,"location":"",
+                         "url":url,"source":src,"region":region,
+                         "note":snippet[:120]})
+        print(f"  ✓ google_search [{s['query'][:45]}…] → {len(jobs)} results")
+        return jobs
     except Exception as e:
-        print(f"Error fetching {url}: {e}")
-        return {}, ""
+        print(f"  ✗ google_search error: {e}"); return []
 
-def build_entry(job, existing_cos):
-    """Build a tracker JS entry object string from a job dict."""
-    url = job.get("url", "")
-    title = job.get("title", "Android Engineer")
-    company = job.get("company", "Unknown")
-    location = job.get("location", "Remote")
-    source = job.get("source", "Greenhouse")
-    note = job.get("note", "")
-    
-    region = detect_region(location)
-    level = detect_level(title)
-    visa = detect_visa(region, company)
-    
-    # Escape any quotes in strings
-    def esc(s):
-        return s.replace('"', "'").replace('\n', ' ').strip()
-    
-    return (
-        f'  {{added:"{TODAY}",'
-        f'co:"{esc(company)}",'
-        f'role:"{esc(title)}",'
-        f'loc:"{esc(location)}",'
-        f'region:"{region}",'
-        f'lv:"{level}",'
-        f'visa:"{visa}",'
-        f'note:"{esc(note)}",'
-        f'src:"{source}",'
-        f'url:"{url}",'
-        f'isNew:true}}'
-    )
+# ─── FILTERS ─────────────────────────────────────────────────────────────────
 
-def inject_new_jobs(content, new_entries):
-    """Inject new job entries just before the closing ]; of the RAW array."""
-    if not new_entries:
-        return content, 0
-    
-    # Reset all isNew flags on existing entries
+SENIOR_KW = ["senior","staff","principal","lead","sr.","sr "]
+SKIP_KW   = ["ios only","flutter","react native","intern","junior",
+             "associate engineer","qa ","devops","backend only",
+             "data engineer","data scientist","product manager",
+             "frontend engineer","web engineer"]
+
+def is_relevant(job):
+    title = job.get("title","").lower()
+    url   = job.get("url","")
+    if not url or len(url) < 10: return False
+    if not any(k in title for k in SENIOR_KW): return False
+    if "android" not in title and "mobile" not in title: return False
+    if any(k in title for k in SKIP_KW): return False
+    if any(b in url for b in ["linkedin.com/company","glassdoor.com/Overview",
+                               "serpapi.com","builtin.com/company"]): return False
+    return True
+
+# ─── ENTRY BUILDER ───────────────────────────────────────────────────────────
+
+def build_entry(job):
+    title    = esc(job.get("title","Android Engineer"))
+    company  = esc(job.get("company","Unknown"))
+    location = esc(job.get("location","Remote"))
+    url      = job.get("url","")
+    source   = esc(job.get("source","Google Jobs"))
+    note     = esc(job.get("note","Auto-discovered"))
+    region   = job.get("region", detect_region(f"{title} {location}"))
+    level    = detect_level(title)
+    visa     = detect_visa(region, company)
+    return (f'  {{added:"{TODAY}",co:"{company}",role:"{title}",'
+            f'loc:"{location}",region:"{region}",lv:"{level}",'
+            f'visa:"{visa}",note:"{note}",src:"{source}",'
+            f'url:"{url}",isNew:true}}')
+
+# ─── INJECT ──────────────────────────────────────────────────────────────────
+
+def inject(content, entries):
+    if not entries: return content, 0
     content = re.sub(r',isNew:true}', ',isNew:false}', content)
-    
-    # Find injection point - just before ]; followed by LI_POSTS
     marker = '];\n\n// ─── LINKEDIN POSTS DATA ───'
     idx = content.find(marker)
     if idx == -1:
-        print("Could not find injection marker!")
-        return content, 0
-    
-    batch_comment = f"\n  // ─── AUTO-UPDATE · {TODAY} ───\n"
-    entries_str = batch_comment + ",\n".join(new_entries) + ",\n"
-    
-    updated = content[:idx] + entries_str + content[idx:]
-    return updated, len(new_entries)
+        marker = '];\nconst LI_POSTS'
+        idx = content.find(marker)
+    if idx == -1:
+        print("✗ Injection point not found!"); return content, 0
+    ts  = datetime.datetime.utcnow().strftime('%H:%M UTC')
+    hdr = f"\n  // ─── AUTO · {TODAY} · {ts} ───\n"
+    blk = hdr + ",\n".join(entries) + ",\n"
+    return content[:idx] + blk + content[idx:], len(entries)
 
-def update_header_date(content):
-    """Update the title date in the tracker header."""
-    month_year = datetime.date.today().strftime("%b %Y")
-    content = re.sub(
-        r'Android Job Tracker · [A-Za-z]+ \d{4}',
-        f'Android Job Tracker · {month_year}',
-        content
-    )
-    return content
+def update_title(content):
+    my = datetime.date.today().strftime("%b %Y")
+    return re.sub(r'Android Job Tracker · [A-Za-z]+ \d{4}',
+                  f'Android Job Tracker · {my}', content)
 
-# ── MAIN ──────────────────────────────────────────────────────────────────────
+# ─── MAIN ────────────────────────────────────────────────────────────────────
 
 def main():
-    print(f"=== Android Tracker Auto-Update · {TODAY} ===\n")
-    
-    serpapi_key = os.environ.get("SERPAPI_KEY", "")
-    
+    print(f"\n{'='*55}")
+    print(f"  Android Tracker Auto-Update  {TODAY}")
+    print(f"  {datetime.datetime.utcnow().strftime('%H:%M UTC')}")
+    print(f"{'='*55}\n")
+
+    if not SERPAPI_KEY:
+        print("✗ SERPAPI_KEY not set. Exiting."); sys.exit(1)
+
+    utc_hour = datetime.datetime.utcnow().hour
+    batches  = HOUR_TO_BATCHES.get(utc_hour, [0, 5])
+    print(f"UTC {utc_hour}h → batches {batches}")
+
+    if not batches:
+        print("No searches this hour (budget save). Done."); return
+
     # Load tracker
-    content = load_tracker()
+    content       = load_tracker()
     existing_urls = get_existing_urls(content)
-    existing_cos = get_existing_cos(content)
-    print(f"Existing entries: {len(existing_urls)} URLs tracked\n")
-    
+    print(f"Existing: {len(existing_urls)} URLs\n")
+
+    # Run searches
     all_jobs = []
-    
-    # ── Strategy 1: SerpAPI search (if key available) ──
-    if serpapi_key:
-        print("Running SerpAPI searches...")
-        for query in SEARCH_QUERIES:
-            results = search_google(query, serpapi_key)
-            for r in results:
-                url = r["url"]
-                # Only ATS urls
-                if not any(ats in url for ats in ["greenhouse.io", "lever.co", "ashbyhq.com"]):
-                    continue
-                title = r["title"].split(" at ")[0].strip() if " at " in r["title"] else r["title"]
-                company = r["title"].split(" at ")[-1].strip() if " at " in r["title"] else "Unknown"
-                # Remove ATS suffix from company
-                for suffix in [" | Greenhouse", " - Lever", " - Ashby", " Jobs"]:
-                    company = company.replace(suffix, "").strip()
-                all_jobs.append({
-                    "url": url, "title": title,
-                    "company": company, "source": "Greenhouse",
-                })
-            time.sleep(1)
-        print(f"SerpAPI found {len(all_jobs)} raw results\n")
-    else:
-        print("No SERPAPI_KEY — using direct ATS scraping...\n")
-        all_jobs = scrape_ats_directly()
-        print(f"Direct scraping found {len(all_jobs)} raw results\n")
-    
-    # ── Deduplicate ──
-    new_jobs = []
-    seen_urls = set(existing_urls)
-    
+    for idx in batches:
+        if idx >= len(SEARCHES): continue
+        s = SEARCHES[idx]
+        print(f"[{idx}] {s['engine']} | {s['query'][:55]}")
+        if s["engine"] == "google_jobs":
+            all_jobs.extend(call_google_jobs(s))
+        else:
+            all_jobs.extend(call_google_search(s))
+        time.sleep(2)
+
+    print(f"\nRaw: {len(all_jobs)} results")
+
+    # Deduplicate + filter
+    seen, new_jobs = set(existing_urls), []
     for job in all_jobs:
-        url = job.get("url", "")
-        if not url or url in seen_urls:
-            continue
-        # Skip if URL is just a base ATS URL (not a specific job)
-        if re.search(r'greenhouse\.io/\w+$|lever\.co/\w+$', url):
-            continue
-        # Skip non-senior roles
-        title = job.get("title", "")
-        if not any(kw in title.lower() for kw in ["senior", "staff", "principal", "lead"]):
-            continue
-        # Skip iOS-only
-        if "ios" in title.lower() and "android" not in title.lower():
-            continue
-        
-        seen_urls.add(url)
+        url = re.sub(r'\?utm_.*', '', job.get("url","").strip())
+        url = re.sub(r'&utm_[^&]*', '', url)
+        if not url or url in seen: continue
+        if not is_relevant(job):   continue
+        seen.add(url)
+        job["url"] = url
         new_jobs.append(job)
-    
-    print(f"New unique jobs after dedup: {len(new_jobs)}\n")
-    
+
+    print(f"New unique relevant: {len(new_jobs)}\n")
+
     if not new_jobs:
-        print("No new jobs found. Tracker unchanged.")
-        return
-    
-    # ── Fetch details & build entries ──
+        print("Nothing new — tracker unchanged."); return
+
     entries = []
     for job in new_jobs:
-        print(f"  + {job['company']} — {job['title']}")
-        details, description = fetch_job_details(job["url"])
-        job.update(details)
-        if description:
-            # Extract key tech keywords for note
-            techs = []
-            for kw in ["Kotlin", "Compose", "KMP", "MVI", "MVVM", "Hilt", "Coroutines", "Flow"]:
-                if kw.lower() in description.lower():
-                    techs.append(kw)
-            job["note"] = " · ".join(techs[:4]) if techs else "Auto-discovered"
-        
-        entry = build_entry(job, existing_cos)
-        entries.append(entry)
-        time.sleep(0.3)
-    
-    # ── Inject & save ──
-    updated_content, count = inject_new_jobs(content, entries)
-    updated_content = update_header_date(updated_content)
-    save_tracker(updated_content)
-    
-    print(f"\n✅ Injected {count} new jobs into tracker")
-    print(f"📄 Tracker saved to {TRACKER_FILE}")
-    
-    # Write summary for GitHub Actions step summary
-    summary_path = os.environ.get("GITHUB_STEP_SUMMARY", "")
-    if summary_path:
-        with open(summary_path, "a") as f:
-            f.write(f"## 🤖 Tracker Auto-Update · {TODAY}\n\n")
-            f.write(f"**{count} new jobs added**\n\n")
-            for job in new_jobs:
-                f.write(f"- [{job['company']} — {job['title']}]({job['url']})\n")
+        print(f"  + {job.get('company','?')} — {job.get('title','?')[:50]}")
+        entries.append(build_entry(job))
+
+    updated, count = inject(content, entries)
+    updated = update_title(updated)
+    save_tracker(updated)
+    print(f"\n✅  +{count} jobs → {TRACKER_FILE}")
+
+    # GitHub step summary
+    sp = os.environ.get("GITHUB_STEP_SUMMARY","")
+    if sp:
+        with open(sp,"a") as f:
+            f.write(f"## 🤖 Tracker Update · {TODAY}\n\n")
+            f.write(f"**+{count} new jobs** | Batches: {batches}\n\n")
+            for j in new_jobs:
+                f.write(f"- [{j.get('company','?')} — {j.get('title','?')}]({j.get('url','#')})\n")
 
 if __name__ == "__main__":
     main()
