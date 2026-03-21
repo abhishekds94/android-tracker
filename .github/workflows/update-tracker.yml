@@ -1,0 +1,72 @@
+name: 🤖 Auto-Update Android Tracker
+
+on:
+  schedule:
+    - cron: '0 14 * * *'
+    - cron: '0 17 * * *'
+    - cron: '0 20 * * *'
+    - cron: '0 23 * * *'
+    - cron: '0 2  * * *'
+  workflow_dispatch:
+    inputs:
+      force_batches:
+        description: 'Force batch indices e.g. "0,1"'
+        required: false
+        default: ''
+
+concurrency:
+  group: tracker-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Scrape & Inject New Jobs
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Run updater
+        env:
+          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+          FORCE_BATCHES: ${{ github.event.inputs.force_batches }}
+        run: |
+          cd $GITHUB_WORKSPACE
+          python scripts/update_tracker.py
+
+      - name: Check for changes
+        id: diff
+        run: |
+          if git diff --quiet index.html; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            COUNT=$(git diff index.html | grep -c "^+.*added:" || echo "0")
+            echo "new_count=$COUNT" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit & push
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          git config user.name  "tracker-bot[bot]"
+          git config user.email "tracker-bot@users.noreply.github.com"
+          git add index.html
+          git commit -m "🤖 +${{ steps.diff.outputs.new_count }} jobs · $(TZ='America/New_York' date +'%Y-%m-%d %I:%M %p EST')"
+          git push
+
+      - name: No-op
+        if: steps.diff.outputs.changed == 'false'
+        run: echo "Tracker is up to date."

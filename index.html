@@ -150,18 +150,27 @@
   .li-header{font-size:14px;font-weight:500;color:var(--text);margin-bottom:.5rem;}
   .li-sub{font-size:12px;color:var(--muted);margin-bottom:1.5rem;line-height:1.6;}
   .li-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:1rem;}
-  .li-card{
-    background:var(--surface);border:1px solid var(--border);border-radius:8px;
-    padding:1rem 1.1rem;border-left:3px solid var(--orange);
-    transition:border-color .15s;
-  }
+  .li-card{background:var(--surface);border:1px solid var(--border);border-radius:9px;
+    padding:1rem 1.1rem;border-left:3px solid var(--orange);transition:border-color .15s;}
   .li-card:hover{border-color:var(--amber);}
+  .li-card-top{display:flex;align-items:center;gap:.65rem;margin-bottom:.55rem;}
+  .li-avatar{width:34px;height:34px;border-radius:50%;background:var(--surface2);
+    border:1px solid var(--border2);display:flex;align-items:center;
+    justify-content:center;font-weight:600;font-size:14px;color:var(--accent);flex-shrink:0;}
+  .li-card-head{display:flex;flex-direction:column;gap:2px;}
   .li-card .li-co{font-weight:500;color:var(--text);font-size:13px;}
-  .li-card .li-role{color:var(--blue);font-size:12px;margin-top:3px;}
-  .li-card .li-role a{color:var(--blue);text-decoration:none;}
+  .li-posted{font-size:10px;color:var(--muted);}
+  .li-card .li-role{margin-bottom:.4rem;}
+  .li-card .li-role a{color:var(--blue);text-decoration:none;font-size:12px;font-weight:500;}
   .li-card .li-role a:hover{text-decoration:underline;}
-  .li-card .li-meta{font-size:11px;color:var(--muted);margin-top:6px;line-height:1.5;}
-  .li-card .li-pill{display:inline-block;font-size:10px;padding:2px 7px;border-radius:4px;margin-top:6px;margin-right:4px;}
+  .li-desc{font-size:11px;color:var(--muted);line-height:1.6;margin-bottom:.5rem;}
+  .li-contact{font-size:11px;color:var(--muted);margin-bottom:.5rem;font-style:italic;}
+  .li-actions{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem;}
+  .li-btn{font-size:10px;padding:3px 10px;border-radius:4px;text-decoration:none;
+    background:var(--surface2);border:1px solid var(--border);color:var(--muted);
+    transition:all .15s;white-space:nowrap;}
+  .li-btn:hover{border-color:var(--blue);color:var(--blue);}
+  .li-btn-li:hover{border-color:var(--amber);color:var(--amber);}
   .li-card .li-note{font-size:11px;color:var(--muted);margin-top:6px;font-style:italic;}
 
   /* ── Footer ── */
@@ -732,23 +741,43 @@ function renderStats(){
 
 // ─── RENDER LINKEDIN POSTS ───
 function renderLinkedIn(){
-  const regionColors={US:"b-us",EU:"b-eu",Remote:"b-rem"};
-  document.getElementById("liGrid").innerHTML=LI_POSTS.map(p=>`
+  const container=document.getElementById('liContainer');
+  if(!container) return;
+
+  const html = LI_POSTS.map(p=>{
+    const regionColor = p.region==='US'?'var(--blue)':p.region==='EU'?'var(--purple)':'var(--teal)';
+    const typeColor   = p.postType?.includes('EM')?'var(--amber)':
+                        p.postType?.includes('Viral')?'var(--red)':'var(--accent)';
+    // Avatar initial from company name
+    const initial = (p.co||'?')[0].toUpperCase();
+    // Contact line
+    const contactLine = p.contact
+      ? `<div class="li-contact">👤 ${p.contact}</div>` : '';
+
+    return `
     <div class="li-card">
-      <div class="li-co">${h(p.co)}</div>
-      <div class="li-role"><a href="${p.url}" target="_blank" rel="noopener">${h(p.role)}</a></div>
-      <div class="li-meta">
-        📍 ${h(p.loc)} &nbsp;·&nbsp; 🗓 ${h(p.posted)}<br>
-        <span style="font-size:10px;color:var(--orange)">${h(p.postType)}</span>
+      <div class="li-card-top">
+        <div class="li-avatar">${initial}</div>
+        <div class="li-card-head">
+          <div class="li-co">${p.co}</div>
+          <div class="li-posted">${p.posted||''} &nbsp;·&nbsp; <span style="color:${typeColor}">${p.postType||'Post'}</span></div>
+        </div>
+        <span class="badge" style="background:rgba(255,255,255,.06);color:${regionColor};border:1px solid ${regionColor}33;margin-left:auto;align-self:flex-start;">${p.region}</span>
       </div>
-      <div class="li-note">${h(p.desc)}</div>
-      <div style="margin-top:8px">
-        <span class="badge ${regionColors[p.region]||'b-rem'}">${p.region}</span>
-        <span class="badge b-staff" style="margin-left:4px">${p.lv}</span>
+      <div class="li-role"><a href="${p.url}" target="_blank" rel="noopener">${p.role}</a>
+        &nbsp;<span style="color:var(--muted);font-size:10px;">↗ ${p.loc||''}</span>
       </div>
-      <div style="margin-top:8px;font-size:10px;color:var(--muted)">💬 ${h(p.contact)}</div>
-    </div>
-  `).join("");
+      <div class="li-desc">${p.desc||''}</div>
+      ${contactLine}
+      <div class="li-actions">
+        <a class="li-btn" href="${p.url}" target="_blank" rel="noopener">🔗 View posting</a>
+        <a class="li-btn li-btn-li" href="https://www.linkedin.com/search/results/content/?keywords=${encodeURIComponent(p.co+' '+p.role.split(',')[0]+' hiring android')}" target="_blank" rel="noopener">🔎 Find on LinkedIn</a>
+      </div>
+    </div>`;
+  }).join('');
+
+  container.innerHTML = html;
+}
   document.getElementById("liTabBadge").textContent=LI_POSTS.length;
 }
 
@@ -863,9 +892,14 @@ render();
     background:var(--surface2);border:1px solid var(--border);
     border-radius:7px;font-size:11px;line-height:1.9;}
   .modal-preview.show{display:block;}
-  .pv-row{display:flex;gap:.5rem;}
-  .pv-label{color:var(--muted);width:70px;flex-shrink:0;}
+  .pv-row{display:flex;gap:.5rem;align-items:center;margin-bottom:.3rem;}
+  .pv-label{color:var(--muted);width:70px;flex-shrink:0;font-size:11px;}
   .pv-val{color:var(--text);}
+  .pv-input{flex:1;background:var(--surface);border:1px solid var(--border);
+    border-radius:5px;color:var(--text);font-family:var(--mono);font-size:11px;
+    padding:.3rem .55rem;outline:none;transition:border-color .15s;}
+  .pv-input:focus{border-color:var(--accent);}
+  .pv-input option{background:var(--surface2);}
 
   .modal-actions{display:flex;gap:.6rem;justify-content:flex-end;
     margin-top:1.2rem;flex-wrap:wrap;align-items:center;}
@@ -920,19 +954,35 @@ render();
         <input id="m-url" type="url" placeholder="https://job-boards.greenhouse.io/..." />
       </div>
       <div class="modal-preview" id="m-preview">
-        <div class="pv-row"><span class="pv-label">Role</span><span class="pv-val" id="pv-role">—</span></div>
-        <div class="pv-row"><span class="pv-label">Location</span><span class="pv-val" id="pv-loc">—</span></div>
-        <div class="pv-row"><span class="pv-label">Region</span><span class="pv-val" id="pv-region">—</span></div>
-        <div class="pv-row"><span class="pv-label">Level</span><span class="pv-val" id="pv-lv">—</span></div>
-        <div class="pv-row"><span class="pv-label">Visa</span><span class="pv-val" id="pv-visa">—</span></div>
-        <div class="pv-row"><span class="pv-label">Source</span><span class="pv-val" id="pv-src">—</span></div>
-        <div class="pv-row"><span class="pv-label">Note</span><span class="pv-val" id="pv-note">—</span></div>
+        <div class="pv-row"><span class="pv-label">Role</span>
+          <input class="pv-input" id="pv-role" type="text" placeholder="Role title" /></div>
+        <div class="pv-row"><span class="pv-label">Location</span>
+          <input class="pv-input" id="pv-loc" type="text" placeholder="e.g. Berlin / Remote US" /></div>
+        <div class="pv-row"><span class="pv-label">Region</span>
+          <select class="pv-input" id="pv-region">
+            <option value="US">🇺🇸 US</option>
+            <option value="EU">🇪🇺 EU</option>
+            <option value="🇮🇳 India">🇮🇳 India</option>
+            <option value="Remote">🌍 Remote</option>
+          </select></div>
+        <div class="pv-row"><span class="pv-label">Level</span>
+          <select class="pv-input" id="pv-lv">
+            <option value="Senior">Senior</option>
+            <option value="Staff">Staff</option>
+            <option value="Principal">Principal</option>
+          </select></div>
+        <div class="pv-row"><span class="pv-label">Visa</span>
+          <input class="pv-input" id="pv-visa" type="text" placeholder="e.g. EU Blue Card eligible" /></div>
+        <div class="pv-row"><span class="pv-label">Source</span>
+          <input class="pv-input" id="pv-src" type="text" placeholder="e.g. Greenhouse" /></div>
+        <div class="pv-row"><span class="pv-label">Note</span>
+          <input class="pv-input" id="pv-note" type="text" placeholder="Tech keywords, notes" /></div>
       </div>
       <div class="modal-status" id="m-status"></div>
       <div class="modal-actions">
         <button class="modal-btn cancel" onclick="closeAddModal()">Cancel</button>
         <button class="modal-btn fetch" id="m-fetch-btn" onclick="fetchAndFill()">🔍 Fetch JD</button>
-        <button class="modal-btn save" id="m-save-btn" onclick="saveManualRole()" disabled>＋ Add to Tracker</button>
+        <button class="modal-btn save" id="m-save-btn" onclick="saveManualRole()">＋ Add to Tracker</button>
       </div>
     </div>
 
@@ -1181,13 +1231,13 @@ function resetSingle(){
 }
 
 function showPreview(j){
-  document.getElementById('pv-role').textContent   = j.role;
-  document.getElementById('pv-loc').textContent    = j.loc;
-  document.getElementById('pv-region').textContent = j.region;
-  document.getElementById('pv-lv').textContent     = j.level;
-  document.getElementById('pv-visa').textContent   = j.visa;
-  document.getElementById('pv-src').textContent    = j.src;
-  document.getElementById('pv-note').textContent   = j.note;
+  document.getElementById('pv-role').value   = j.role;
+  document.getElementById('pv-loc').value    = j.loc;
+  document.getElementById('pv-region').value = j.region;
+  document.getElementById('pv-lv').value     = j.level;
+  document.getElementById('pv-visa').value   = j.visa;
+  document.getElementById('pv-src').value    = j.src;
+  document.getElementById('pv-note').value   = j.note;
   document.getElementById('m-preview').classList.add('show');
 }
 
@@ -1216,7 +1266,29 @@ async function fetchAndFill(){
 }
 
 function saveManualRole(){
-  if(!_manualJob){setStatus('m-status','Fetch JD first','err');return;}
+  const co  = document.getElementById('m-co').value.trim();
+  const url = document.getElementById('m-url').value.trim();
+  if(!co)  {setStatus('m-status','Enter company name first','err');return;}
+  if(!url) {setStatus('m-status','Enter a JD URL first','err');return;}
+  // If never fetched, build a fallback job then read fields
+  if(!_manualJob) _manualJob = fallbackJob(co, url);
+  // Read possibly-edited preview field values
+  const pvRole   = document.getElementById('pv-role');
+  const pvLoc    = document.getElementById('pv-loc');
+  const pvRegion = document.getElementById('pv-region');
+  const pvLv     = document.getElementById('pv-lv');
+  const pvVisa   = document.getElementById('pv-visa');
+  const pvSrc    = document.getElementById('pv-src');
+  const pvNote   = document.getElementById('pv-note');
+  if(pvRole)   _manualJob.role   = pvRole.value.trim()   || _manualJob.role;
+  if(pvLoc)    _manualJob.loc    = pvLoc.value.trim()    || _manualJob.loc;
+  if(pvRegion) _manualJob.region = pvRegion.value        || _manualJob.region;
+  if(pvLv)     _manualJob.level  = pvLv.value            || _manualJob.level;
+  if(pvVisa)   _manualJob.visa   = pvVisa.value.trim()   || _manualJob.visa;
+  if(pvSrc)    _manualJob.src    = pvSrc.value.trim()    || _manualJob.src;
+  if(pvNote)   _manualJob.note   = pvNote.value.trim()   || _manualJob.note;
+  _manualJob.co  = co;
+  _manualJob.url = url;
   pushJobToTracker(_manualJob);
   finaliseRender();
   closeAddModal();
