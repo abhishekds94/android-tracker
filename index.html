@@ -796,7 +796,7 @@ const _fbConfig = {
 const FB_PATH = "android_tracker/userdata";
 
 // In-memory store — synced from Firebase on load, written back on every change
-let _store = {statuses:{}, priorities:{}, notes:{}};
+let _store = {statuses:{}, priorities:{}, notes:{}, manual_jobs:[]};
 
 // Firebase app + db reference
 let _db = null;
@@ -814,10 +814,15 @@ function _initFirebase(){
       const data = snap.val();
       if(data){
         _store = data;
-        if(!_store.statuses)   _store.statuses   = {};
-        if(!_store.priorities) _store.priorities = {};
-        if(!_store.notes)      _store.notes      = {};
-        // Re-apply to jobs array and re-render
+        if(!_store.statuses)    _store.statuses    = {};
+        if(!_store.priorities)  _store.priorities  = {};
+        if(!_store.notes)       _store.notes       = {};
+        if(!_store.manual_jobs) _store.manual_jobs = [];
+
+        // Merge manual jobs back into RAW (deduplicated by URL)
+        _mergeManualJobs();
+
+        // Re-apply statuses + priorities to all jobs
         jobs.forEach((j,i) => {
           j.status   = _store.statuses[i]   || j.status   || "Researching";
           j.priority = _store.priorities[i] || j.priority || "normal";
@@ -884,6 +889,7 @@ if(_lsRaw){ try{ _store = JSON.parse(_lsRaw); }catch(e){} }
 if(!_store.statuses)   _store.statuses   = {};
 if(!_store.priorities) _store.priorities = {};
 if(!_store.notes)      _store.notes      = {};
+if(!_store.manual_jobs) _store.manual_jobs = [];
 const saved = _store.statuses;
 const jobs=RAW.map((j,i)=>({...j,idx:i+1,status:(_store.statuses[i]||j.status||"Researching"),priority:(_store.priorities[i]||"normal")}));
 // saveAll/saveStatuses/savePriority/saveNotes/getNotes/getPriority defined above in Firebase block
@@ -1081,6 +1087,12 @@ document.querySelectorAll("th[data-key]").forEach(th=>{
 // ─── INIT ───
 render();
 renderStats();
+// Merge any manual jobs already in _store (from localStorage cache or Firebase)
+if(_store.manual_jobs && _store.manual_jobs.length){
+  _mergeManualJobs();
+  render();
+  renderStats();
+}
 
 // ─── TABS ───
 function switchTab(tab,btn){
@@ -1503,11 +1515,58 @@ function fallbackJob(co, url){
 
 // ── PUSH JOB TO TRACKER ───────────────────────────────────────────────────
 
+// ── _mergeManualJobs: replay _store.manual_jobs into RAW/jobs (deduped) ────
+function _mergeManualJobs(){
+  if(!_store.manual_jobs || !_store.manual_jobs.length) return;
+  // Build set of URLs already in RAW
+  const existingUrls = new Set(RAW.map(r => r.url));
+  _store.manual_jobs.forEach(mj => {
+    if(!existingUrls.has(mj.url)){
+      const entry = {...mj, isNew:false};
+      RAW.push(entry);
+      existingUrls.add(mj.url);
+    }
+  });
+  // Re-index everything
+  RAW.forEach((r,i) => { r.idx = i+1; });
+  jobs.length = 0;
+  RAW.forEach((r,i) => {
+    jobs.push({...r, idx:i+1,
+      status:   _store.statuses[i]   || r.status   || "Researching",
+      priority: _store.priorities[i] || r.priority || "normal"
+    });
+  });
+}
+
 function pushJobToTracker(j){
-  const today=new Date().toISOString().slice(0,10);
-  const entry={...j,added:today,idx:RAW.length+1,status:'Researching',isNew:false};
+  const today = new Date().toISOString().slice(0,10);
+  const entry = {...j, added:today, idx:RAW.length+1, status:"Researching", isNew:false};
+
+  // Add to in-memory arrays
   RAW.push(entry);
   jobs.push({...entry});
+
+  // Persist to Firebase _store.manual_jobs
+  if(!_store.manual_jobs) _store.manual_jobs = [];
+  // Store a clean version (no idx — will be recalculated on merge)
+  const stored = {
+    co:    entry.co,
+    role:  entry.role,
+    loc:   entry.loc,
+    region:entry.region,
+    lv:    entry.lv || "Senior",
+    visa:  entry.visa || "",
+    note:  entry.note || "",
+    src:   entry.src || "Manual",
+    url:   entry.url,
+    added: today
+  };
+  // Avoid duplicate URLs in manual_jobs store
+  const alreadyStored = _store.manual_jobs.some(mj => mj.url === stored.url);
+  if(!alreadyStored){
+    _store.manual_jobs.push(stored);
+    _scheduleSync(); // fires saveAll which writes full _store to Firebase
+  }
 }
 
 function finaliseRender(){
