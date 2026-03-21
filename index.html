@@ -132,6 +132,9 @@
   }
   .status-select:focus{border-color:var(--accent);}
   .s-researching{border-left:3px solid var(--muted);}
+  .s-waiting    {border-left:3px solid var(--amber);}
+  .s-interview  {border-left:3px solid var(--purple);}
+  .s-failed     {border-left:3px solid var(--red);}
   .s-applied    {border-left:3px solid var(--blue);}
   .s-screen     {border-left:3px solid var(--teal);}
   .s-technical  {border-left:3px solid var(--purple);}
@@ -173,6 +176,63 @@
   .li-btn-li:hover{border-color:var(--amber);color:var(--amber);}
   .li-card .li-note{font-size:11px;color:var(--muted);margin-top:6px;font-style:italic;}
 
+
+  /* ── Priority flags ── */
+  .pri-high   {color:#f87171;font-size:13px;cursor:pointer;margin-right:2px;}
+  .pri-normal {color:var(--muted);font-size:13px;cursor:pointer;margin-right:2px;}
+  .pri-low    {color:#6b7280;font-size:13px;cursor:pointer;margin-right:2px;}
+
+  /* ── Notes column ── */
+  col.c-notes  {width:110px;}
+  col.c-priority{width:36px;}
+  .td-notes{padding:4px 6px;vertical-align:middle;}
+  .notes-chips{display:flex;flex-wrap:wrap;gap:3px;align-items:center;}
+  .note-chip{font-size:10px;background:var(--surface2);border:1px solid var(--border);
+    border-radius:4px;padding:2px 6px;color:var(--blue);cursor:pointer;white-space:nowrap;
+    text-decoration:none;max-width:80px;overflow:hidden;text-overflow:ellipsis;display:inline-block;}
+  .note-chip:hover{border-color:var(--blue);color:var(--accent);}
+  .note-add-btn{font-size:11px;background:transparent;border:1px dashed var(--border);
+    border-radius:4px;padding:2px 6px;color:var(--muted);cursor:pointer;white-space:nowrap;
+    transition:all .15s;line-height:1.4;}
+  .note-add-btn:hover{border-color:var(--accent);color:var(--accent);}
+
+  /* ── Notes popup ── */
+  .notes-popup-backdrop{display:none;position:fixed;inset:0;z-index:400;
+    background:rgba(0,0,0,.65);backdrop-filter:blur(3px);
+    align-items:center;justify-content:center;}
+  .notes-popup-backdrop.open{display:flex;}
+  .notes-popup{background:var(--surface);border:1px solid var(--border2);
+    border-radius:11px;padding:1.5rem;width:min(520px,92vw);
+    box-shadow:0 20px 50px rgba(0,0,0,.6);max-height:80vh;overflow-y:auto;}
+  .notes-popup h3{font-family:var(--serif);font-size:1.1rem;font-weight:700;
+    color:var(--text);margin-bottom:.25rem;}
+  .notes-popup .np-sub{font-size:11px;color:var(--muted);margin-bottom:1rem;}
+  .notes-list{display:flex;flex-direction:column;gap:.5rem;margin-bottom:1rem;}
+  .note-item{display:flex;align-items:center;gap:.5rem;
+    background:var(--surface2);border:1px solid var(--border);
+    border-radius:7px;padding:.5rem .7rem;}
+  .note-item .note-num{font-size:10px;color:var(--muted);white-space:nowrap;
+    min-width:42px;font-weight:500;}
+  .note-item .note-text{flex:1;font-size:11px;color:var(--blue);
+    word-break:break-all;text-decoration:none;}
+  .note-item .note-text:hover{color:var(--accent);}
+  .note-item .note-del{background:none;border:none;color:var(--muted);
+    cursor:pointer;font-size:14px;padding:0 2px;line-height:1;}
+  .note-item .note-del:hover{color:var(--red);}
+  .note-add-row{display:flex;gap:.5rem;margin-top:.5rem;}
+  .note-add-row input{flex:1;background:var(--surface2);border:1px solid var(--border2);
+    border-radius:6px;color:var(--text);font-family:var(--mono);font-size:12px;
+    padding:.45rem .7rem;outline:none;transition:border-color .15s;}
+  .note-add-row input:focus{border-color:var(--accent);}
+  .note-add-row input::placeholder{color:var(--muted);}
+  .note-add-row button{padding:.45rem .9rem;border-radius:6px;
+    border:none;background:var(--accent);color:#0d0f11;
+    font-family:var(--mono);font-size:12px;font-weight:600;cursor:pointer;}
+  .np-actions{display:flex;justify-content:flex-end;margin-top:1rem;}
+  .np-close{padding:.4rem .9rem;border-radius:6px;border:1px solid var(--border2);
+    background:transparent;color:var(--muted);font-family:var(--mono);
+    font-size:12px;cursor:pointer;}
+  .np-close:hover{color:var(--text);border-color:var(--text);}
   /* ── Footer ── */
   .footer{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);padding:.55rem 2rem;font-size:11px;color:var(--muted);display:flex;gap:1.5rem;align-items:center;z-index:200;flex-wrap:wrap;}
   .footer strong{color:var(--text);}
@@ -241,8 +301,8 @@
     <table id="headerTable">
       <colgroup>
         <col class="c-num"><col class="c-added"><col class="c-co"><col class="c-role">
-        <col class="c-loc"><col class="c-region"><col class="c-level">
-        <col class="c-status"><col class="c-visa"><col class="c-src">
+        <col class="c-loc"><col class="c-region"><col class="c-priority">
+        <col class="c-status"><col class="c-notes">
       </colgroup>
       <thead>
         <tr>
@@ -252,10 +312,9 @@
           <th data-key="role">Role<span class="si">↕</span></th>
           <th data-key="loc">Location<span class="si">↕</span></th>
           <th data-key="region">Region<span class="si">↕</span></th>
-          <th data-key="lv">Level<span class="si">↕</span></th>
+          <th data-key="priority" title="Priority">⭐</th>
           <th data-key="status">Status<span class="si">↕</span></th>
-          <th data-key="visa">Visa / Notes<span class="si">↕</span></th>
-          <th data-key="src">Source<span class="si">↕</span></th>
+          <th>Notes</th>
         </tr>
       </thead>
     </table>
@@ -269,8 +328,8 @@
     <table id="bodyTable">
       <colgroup>
         <col class="c-num"><col class="c-added"><col class="c-co"><col class="c-role">
-        <col class="c-loc"><col class="c-region"><col class="c-level">
-        <col class="c-status"><col class="c-visa"><col class="c-src">
+        <col class="c-loc"><col class="c-region"><col class="c-priority">
+        <col class="c-status"><col class="c-notes">
       </colgroup>
       <tbody id="tbody"></tbody>
     </table>
@@ -309,8 +368,102 @@
 
 <script>
 // ─── CONSTANTS ───
-const STATUSES=["Researching","Applied","Recruiter Screen","Technical","Final Round","Offer","Rejected","Ghosted","Not Applicable"];
-const STATUS_CLASS={"Researching":"s-researching","Applied":"s-applied","Recruiter Screen":"s-screen","Technical":"s-technical","Final Round":"s-final","Offer":"s-offer","Rejected":"s-rejected","Ghosted":"s-ghosted","Not Applicable":"s-na"};
+const STATUSES=["Researching","Waiting","Applied","Recruiter Screen","Interview In-Progress","Failed","Not Applicable"];
+const STATUS_CLASS={"Researching":"s-researching","Waiting":"s-waiting","Applied":"s-applied","Recruiter Screen":"s-screen","Interview In-Progress":"s-interview","Failed":"s-failed","Not Applicable":"s-na"};
+
+// ─── PRIORITY HELPERS ───
+function priorityIcon(p){
+  if(p==='high')   return '<span class="pri-high"  title="High priority">🔴</span>';
+  if(p==='low')    return '<span class="pri-low"   title="Low priority">⚪</span>';
+  return                  '<span class="pri-normal" title="Normal priority">🟡</span>';
+}
+function cyclePriority(idx){
+  const cur=jobs[idx].priority||'normal';
+  const next=cur==='normal'?'high':cur==='high'?'low':'normal';
+  savePriority(idx,next);
+  render();
+}
+
+// ─── NOTES CELL ───
+function notesCell(idx){
+  const notes=getNotes(idx);
+  let chips='';
+  notes.forEach((n,i)=>{
+    const label=`Note ${i+1}`;
+    const isUrl=n.startsWith('http');
+    if(isUrl){
+      chips+=`<a class="note-chip" href="${n}" target="_blank" rel="noopener" title="${n}">${label}</a>`;
+    } else {
+      chips+=`<span class="note-chip" onclick="openNotesPopup(${idx})" title="${n}">${label}</span>`;
+    }
+  });
+  chips+=`<button class="note-add-btn" onclick="openNotesPopup(${idx})">${notes.length?'+':'+ Add note'}</button>`;
+  return `<div class="notes-chips">${chips}</div>`;
+}
+
+// ─── NOTES POPUP ───
+let _notesPopupIdx = -1;
+
+function openNotesPopup(idx){
+  _notesPopupIdx = idx;
+  const job = jobs[idx];
+  document.getElementById('np-title').textContent = job.co + ' — ' + job.role.substring(0,50);
+  renderNotesList(idx);
+  document.getElementById('np-input').value='';
+  document.getElementById('notesPopup').classList.add('open');
+  setTimeout(()=>document.getElementById('np-input').focus(),100);
+}
+
+function closeNotesPopup(){
+  document.getElementById('notesPopup').classList.remove('open');
+  _notesPopupIdx=-1;
+  render();
+}
+
+function renderNotesList(idx){
+  const notes=getNotes(idx);
+  const container=document.getElementById('np-list');
+  if(!notes.length){
+    container.innerHTML='<div style="font-size:11px;color:var(--muted);padding:.5rem 0;">No notes yet — add a LinkedIn URL, email, or any text below.</div>';
+    return;
+  }
+  container.innerHTML=notes.map((n,i)=>{
+    const isUrl=n.startsWith('http');
+    const display=isUrl?`<a class="note-text" href="${n}" target="_blank" rel="noopener">${n}</a>`
+                       :`<span class="note-text" style="color:var(--text);">${n}</span>`;
+    return `<div class="note-item">
+      <span class="note-num">Note ${i+1}</span>
+      ${display}
+      <button class="note-del" onclick="deleteNote(${idx},${i})" title="Delete">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function addNote(){
+  if(_notesPopupIdx<0) return;
+  const input=document.getElementById('np-input');
+  const val=input.value.trim();
+  if(!val) return;
+  const notes=getNotes(_notesPopupIdx);
+  notes.push(val);
+  saveNotes(_notesPopupIdx,notes);
+  renderNotesList(_notesPopupIdx);
+  input.value='';
+  input.focus();
+}
+
+function deleteNote(idx,noteIdx){
+  const notes=getNotes(idx);
+  notes.splice(noteIdx,1);
+  saveNotes(idx,notes);
+  renderNotesList(idx);
+}
+
+// Enter key in notes input
+document.addEventListener('DOMContentLoaded',()=>{
+  const inp=document.getElementById('np-input');
+  if(inp) inp.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();addNote();}});
+});
 
 // ─── JOB DATA ───
 // added:"YYYY-MM-DD" = date added to tracker. Mar 17 = original batch. Mar 18 = new from today's deep sweep.
@@ -619,11 +772,28 @@ const LI_POSTS=[
 ];
 
 // ─── STATE ───
-const STORAGE_KEY="abhi_android_tracker_v3";
+const STORAGE_KEY="abhi_android_tracker_v4";
 let saved={};
 try{saved=JSON.parse(localStorage.getItem(STORAGE_KEY))||{};}catch(e){}
-const jobs=RAW.map((j,i)=>({...j,idx:i+1,status:saved[i]||"Researching"}));
-function saveStatuses(){const out={};jobs.forEach((j,i)=>{out[i]=j.status;});try{localStorage.setItem(STORAGE_KEY,JSON.stringify(out));}catch(e){}}
+const jobs=RAW.map((j,i)=>({...j,idx:i+1,status:(_store.statuses[i]||j.status||"Researching"),priority:(_store.priorities[i]||"normal")}));
+function saveAll(){
+  try{localStorage.setItem(STORAGE_KEY,JSON.stringify(_store));}catch(e){}
+}
+function saveStatuses(){
+  jobs.forEach((j,i)=>{_store.statuses[i]=j.status;});
+  saveAll();
+}
+function savePriority(idx,val){
+  _store.priorities[idx]=val;
+  jobs[idx].priority=val;
+  saveAll();
+}
+function saveNotes(idx,notes){
+  _store.notes[idx]=notes;
+  saveAll();
+}
+function getNotes(idx){return _store.notes[idx]||[];}
+function getPriority(idx){return _store.priorities[idx]||'normal';}
 
 let sortKey="idx",sortDir=1,activeTab="jobs";
 
@@ -648,7 +818,11 @@ function getFiltered(){
 
 function cmpFn(a,b){
   let av=a[sortKey]??"",bv=b[sortKey]??"";
-  if(typeof av==="number")return(av-bv)*sortDir;
+  if(sortKey==="priority"){
+      const po={"high":0,"normal":1,"low":2};
+      return ((po[av]||1)-(po[bv]||1))*sortDir;
+    }
+    if(typeof av==="number")return(av-bv)*sortDir;
   return av.toString().localeCompare(bv.toString())*sortDir;
 }
 
@@ -684,10 +858,9 @@ function rowHtml(j,isNa){
     <td class="td-role"><a href="${j.url}" target="_blank" rel="noopener">${h(j.role)}</a>${np}${lb}${j.note?`<span class="note">${h(j.note)}</span>`:""}</td>
     <td class="td-loc" title="${h(j.loc)}">${h(j.loc)}</td>
     <td>${regionBadge(j.region)}</td>
-    <td>${j.lv==="Staff"?`<span class="badge b-staff">Staff</span>`:`<span style="color:var(--muted);font-size:11px">Senior</span>`}</td>
+    <td class="td-priority" onclick="cyclePriority(${j.idx-1})" title="Click to change priority" style="cursor:pointer;text-align:center;">${priorityIcon(j.priority)}</td>
     <td><select class="status-select ${sc}" data-idx="${j.idx-1}" onchange="updateStatus(this)">${opts}</select></td>
-    <td class="td-visa ${visaCls(j.visa)}" title="${h(j.visa)}">${h(j.visa)}</td>
-    <td><span class="src-pill">${h(j.src)}</span></td>
+    <td class="td-notes">${notesCell(j.idx-1)}</td>
   </tr>`;
 }
 
@@ -718,28 +891,41 @@ function updateStatus(sel){
 function renderStats(){
   const total=jobs.length;
   const newCt=jobs.filter(j=>j.isNew).length;
-  const usCt=jobs.filter(j=>j.region==="US").length;
-  const euCt=jobs.filter(j=>j.region==="EU").length;
-  const staffCt=jobs.filter(j=>j.lv==="Staff").length;
-  const confCt=jobs.filter(j=>j.visa.includes("✓")).length;
-  const progCt=jobs.filter(j=>!["Researching","Not Applicable"].includes(j.status)).length;
-  const naCt=jobs.filter(j=>j.status==="Not Applicable").length;
-  const inCt=jobs.filter(j=>j.region==="IN").length;
-  document.getElementById("stats").innerHTML=`
-    <div class="stat-chip"><div class="val">${total}</div><div class="lbl">Jobs</div></div>
-    <div class="stat-chip orange"><div class="val">${LI_POSTS.length}</div><div class="lbl">LI Posts</div></div>
-    <div class="stat-chip green"><div class="val">${newCt}</div><div class="lbl">New</div></div>
-    <div class="stat-chip blue"><div class="val">${usCt}</div><div class="lbl">US</div></div>
-    <div class="stat-chip"><div class="val">${euCt}</div><div class="lbl">EU</div></div>
-    <div class="stat-chip" style="border-left:2px solid var(--orange)"><div class="val" style="color:var(--orange)">${inCt}</div><div class="lbl">🇮🇳 India</div></div>
-    <div class="stat-chip amber"><div class="val">${staffCt}</div><div class="lbl">Staff</div></div>
-    <div class="stat-chip"><div class="val">${confCt}</div><div class="lbl">Confirmed ✓</div></div>
-    <div class="stat-chip purple"><div class="val">${progCt}</div><div class="lbl">In Progress</div></div>
-    <div class="stat-chip"><div class="val" style="color:var(--muted)">${naCt}</div><div class="lbl">N/A</div></div>
-  `;
+  // Status pipeline counts
+  const counts={};
+  jobs.forEach(j=>{counts[j.status]=(counts[j.status]||0)+1;});
+  const statusOrder=["Researching","Waiting","Applied","Recruiter Screen","Interview In-Progress","Failed","Not Applicable"];
+  const statusColors={"Researching":"var(--muted)","Waiting":"var(--amber)","Applied":"var(--blue)",
+    "Recruiter Screen":"var(--teal)","Interview In-Progress":"var(--purple)","Failed":"var(--red)","Not Applicable":"#374151"};
+  const priorityCt=jobs.filter(j=>j.priority==='high').length;
+
+  const statsEl=document.getElementById('stats');
+  if(!statsEl) return;
+
+  // Build stat chips
+  let html=`
+    <div class="stat-chip green"><div class="val">${total}</div><div class="lbl">TOTAL</div></div>
+    <div class="stat-chip"><div class="val" style="color:var(--accent)">${newCt}</div><div class="lbl">NEW</div></div>
+    <div class="stat-chip"><div class="val" style="color:#f87171">${priorityCt}</div><div class="lbl">🔴 HIGH</div></div>`;
+
+  statusOrder.forEach(s=>{
+    const n=counts[s]||0;
+    if(n===0) return;
+    const shortLabels={"Researching":"Research","Waiting":"Waiting","Applied":"Applied",
+      "Recruiter Screen":"Screen","Interview In-Progress":"Interview","Failed":"Failed","Not Applicable":"N/A"};
+    html+=`<div class="stat-chip"><div class="val" style="color:${statusColors[s]||'var(--text)'}">${n}</div><div class="lbl">${shortLabels[s]||s}</div></div>`;
+  });
+
+  statsEl.innerHTML=html;
+  const jb=document.getElementById('jobsTabBadge');
+  if(jb) jb.textContent=total;
+  const cb=document.getElementById('countBadge');
+  if(cb){
+    const visible=document.querySelectorAll('#tbody tr:not(.na-divider)').length;
+    cb.textContent=visible+' shown';
+  }
 }
 
-// ─── RENDER LINKEDIN POSTS ───
 function renderLinkedIn(){
   const container=document.getElementById('liContainer');
   if(!container) return;
@@ -825,6 +1011,22 @@ hScroll.addEventListener("scroll",()=>{bScroll.scrollLeft=hScroll.scrollLeft;});
 render();
 </script>
 
+
+<!-- ── NOTES POPUP ──────────────────────────────────────────────── -->
+<div class="notes-popup-backdrop" id="notesPopup" onclick="if(event.target===this)closeNotesPopup()">
+  <div class="notes-popup">
+    <h3 id="np-title">Notes</h3>
+    <div class="np-sub">Add LinkedIn URLs, email addresses, or any text. Each entry is saved as Note 1, Note 2, etc.</div>
+    <div class="notes-list" id="np-list"></div>
+    <div class="note-add-row">
+      <input id="np-input" type="text" placeholder="Paste a LinkedIn URL, email, or type a note… then press Enter" />
+      <button onclick="addNote()">Add</button>
+    </div>
+    <div class="np-actions">
+      <button class="np-close" onclick="closeNotesPopup()">Done</button>
+    </div>
+  </div>
+</div>
 <!-- ── ADD ROLE MODAL v2 (single + bulk) ────────────────────────────────── -->
 <style>
   .fab{position:fixed;bottom:2rem;right:2rem;z-index:200;
