@@ -817,7 +817,9 @@ function _initFirebase(){
         if(!_store.statuses)    _store.statuses    = {};
         if(!_store.priorities)  _store.priorities  = {};
         if(!_store.notes)       _store.notes       = {};
-        if(!_store.manual_jobs) _store.manual_jobs = [];
+        if(!_store.manual_jobs || Array.isArray(_store.manual_jobs)){
+  _store.manual_jobs = {};
+}
 
         // Merge manual jobs back into RAW (deduplicated by URL)
         _mergeManualJobs();
@@ -889,7 +891,9 @@ if(_lsRaw){ try{ _store = JSON.parse(_lsRaw); }catch(e){} }
 if(!_store.statuses)   _store.statuses   = {};
 if(!_store.priorities) _store.priorities = {};
 if(!_store.notes)      _store.notes      = {};
-if(!_store.manual_jobs) _store.manual_jobs = [];
+if(!_store.manual_jobs || Array.isArray(_store.manual_jobs)){
+          _store.manual_jobs = {};
+        }
 const saved = _store.statuses;
 const jobs=RAW.map((j,i)=>({...j,idx:i+1,status:(_store.statuses[i]||j.status||"Researching"),priority:(_store.priorities[i]||"normal")}));
 // saveAll/saveStatuses/savePriority/saveNotes/getNotes/getPriority defined above in Firebase block
@@ -1517,16 +1521,27 @@ function fallbackJob(co, url){
 
 // ── _mergeManualJobs: replay _store.manual_jobs into RAW/jobs (deduped) ────
 function _mergeManualJobs(){
-  if(!_store.manual_jobs || !_store.manual_jobs.length) return;
+  if(!_store.manual_jobs) return;
+  // manual_jobs is stored as an object {key: {co,role,...}} — Firebase-safe
+  // Also handle legacy array format just in case
+  const mjList = Array.isArray(_store.manual_jobs)
+    ? _store.manual_jobs
+    : Object.values(_store.manual_jobs);
+  if(!mjList.length) return;
+
   // Build set of URLs already in RAW
   const existingUrls = new Set(RAW.map(r => r.url));
-  _store.manual_jobs.forEach(mj => {
-    if(!existingUrls.has(mj.url)){
+  let added = 0;
+  mjList.forEach(mj => {
+    if(mj && mj.url && !existingUrls.has(mj.url)){
       const entry = {...mj, isNew:false};
       RAW.push(entry);
       existingUrls.add(mj.url);
+      added++;
     }
   });
+  if(!added) return;
+
   // Re-index everything
   RAW.forEach((r,i) => { r.idx = i+1; });
   jobs.length = 0;
@@ -1536,36 +1551,42 @@ function _mergeManualJobs(){
       priority: _store.priorities[i] || r.priority || "normal"
     });
   });
+  console.log("[tracker] Merged", added, "manual jobs from Firebase");
 }
 
 function pushJobToTracker(j){
   const today = new Date().toISOString().slice(0,10);
-  const entry = {...j, added:today, idx:RAW.length+1, status:"Researching", isNew:false};
+  // Normalise level — _manualJob uses .level, RAW entries use .lv
+  const lv = j.lv || j.level || "Senior";
+  const entry = {...j, lv, added:today, idx:RAW.length+1, status:"Researching", isNew:false};
 
   // Add to in-memory arrays
   RAW.push(entry);
   jobs.push({...entry});
 
   // Persist to Firebase _store.manual_jobs
-  if(!_store.manual_jobs) _store.manual_jobs = [];
-  // Store a clean version (no idx — will be recalculated on merge)
-  const stored = {
-    co:    entry.co,
-    role:  entry.role,
-    loc:   entry.loc,
-    region:entry.region,
-    lv:    entry.lv || "Senior",
-    visa:  entry.visa || "",
-    note:  entry.note || "",
-    src:   entry.src || "Manual",
-    url:   entry.url,
-    added: today
-  };
-  // Avoid duplicate URLs in manual_jobs store
-  const alreadyStored = _store.manual_jobs.some(mj => mj.url === stored.url);
-  if(!alreadyStored){
-    _store.manual_jobs.push(stored);
-    _scheduleSync(); // fires saveAll which writes full _store to Firebase
+  // IMPORTANT: use an object keyed by URL (not an array)
+  // Firebase converts JS arrays to {0:{}, 1:{}} on roundtrip which breaks .push()/.some()
+  if(!_store.manual_jobs || Array.isArray(_store.manual_jobs)){
+    _store.manual_jobs = {};
+  }
+  // Use a sanitized URL as key
+  const key = entry.url.replace(/[.#$/\[\]]/g, '_').slice(-80);
+  if(!_store.manual_jobs[key]){
+    _store.manual_jobs[key] = {
+      co:    entry.co    || "",
+      role:  entry.role  || "",
+      loc:   entry.loc   || "",
+      region:entry.region|| "US",
+      lv:    lv,
+      visa:  entry.visa  || "",
+      note:  entry.note  || "",
+      src:   entry.src   || "Manual",
+      url:   entry.url,
+      added: today
+    };
+    console.log("[tracker] Saving manual job to Firebase:", entry.co, entry.role);
+    _scheduleSync();
   }
 }
 
