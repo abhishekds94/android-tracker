@@ -64,21 +64,40 @@ SEARCHES = [
     {"query": 'site:ashbyhq.com "Senior Android" OR "Staff Android" Kotlin',
      "engine": "google", "location": None, "gl": "us", "hl": "en", "region": None, "chips": None},
 
-    # Index 9 — LinkedIn hiring posts
-    {"query": '"Senior Android Engineer" "we are hiring" OR "now hiring" OR "open role" Kotlin 2026',
-     "engine": "google", "location": None, "gl": "us", "hl": "en", "region": None, "chips": None},
+    # Index 9 — LinkedIn posts: "hiring" + "Android" US/global
+    {"query": 'site:linkedin.com/posts "hiring" "Android" "Senior" "Kotlin" -inurl:jobs -inurl:company',
+     "engine": "google", "location": None, "gl": "us", "hl": "en",
+     "region": None, "chips": None, "is_li_post": True},
+
+    # Index 10 — LinkedIn posts: "hiring" + "Android" EU
+    {"query": 'site:linkedin.com/posts "hiring" "Android" ("Berlin" OR "Amsterdam" OR "Dublin" OR "Germany" OR "Netherlands")',
+     "engine": "google", "location": None, "gl": "us", "hl": "en",
+     "region": "EU", "chips": None, "is_li_post": True},
 ]
 
 # ─── BUDGET ROTATION: UTC hour → which search indices to run ─────────────────
-# 5 active runs/day × 2 searches = 10/day × 30 = 300 (trim 12am = 240 ✅)
+# US is primary → runs EVERY day
+# EU is secondary → runs every ODD calendar day only
+#
+# Daily search count:
+#   Odd days  (EU active):  9am(2)+12pm(2)+3pm(1)+6pm(3)+9pm(2) = 10
+#   Even days (EU skipped): 3pm(1)+6pm(3)+9pm(2) = 6
+#   Monthly: (10×15)+(6×15) = 150+90 = 240 ✅ under 250
+#
 HOUR_TO_BATCHES = {
-    14: [0, 1],   # 9am  EST — US Senior + US Staff
-    17: [2, 3],   # 12pm EST — EU Berlin + Amsterdam
-    20: [4, 5],   # 3pm  EST — EU Dublin + India
-    23: [6, 7],   # 6pm  EST — Greenhouse + Lever
-    2:  [8, 9],   # 9pm  EST — Ashby + LinkedIn posts
-    5:  [],       # 12am EST — skip (budget save)
+    14: [4, 5],      # 9am  EST — EU Dublin + India      (odd days only)
+    17: [2, 3],      # 12pm EST — EU Germany + Amsterdam (odd days only)
+    20: [0],         # 3pm  EST — US Senior              (EVERY day — US is primary)
+    23: [6, 7, 8],   # 6pm  EST — Greenhouse + Lever + Ashby
+    2:  [9, 10],     # 9pm  EST — LinkedIn posts US + EU
 }
+
+def get_batches_for_hour(utc_hour):
+    batches = HOUR_TO_BATCHES.get(utc_hour, [])
+    # Skip EU slots (9am + 12pm) on even calendar days
+    if utc_hour in (14, 17) and datetime.date.today().day % 2 == 0:
+        return []
+    return batches
 
 # ─── REGION / LEVEL / VISA ───────────────────────────────────────────────────
 
@@ -196,20 +215,62 @@ def call_google_jobs(s):
 def call_google_search(s):
     params = {"engine":"google","q":s["query"],"api_key":SERPAPI_KEY,
               "hl":s.get("hl","en"),"gl":s.get("gl","us"),"num":10}
+    is_li_post = s.get("is_li_post", False)
     try:
         data = requests.get(SERPAPI_URL, params=params, timeout=25).json()
         if "error" in data:
             print(f"  SerpAPI error: {data['error']}"); return []
+
+        results = data.get("organic_results", [])
         jobs = []
-        for r in data.get("organic_results",[]):
+
+        for r in results:
             url     = r.get("link","")
             snippet = r.get("snippet","")
             t_raw   = r.get("title","")
-            # Only ATS or LinkedIn job pages
+
+            # ── LinkedIn POST handling ─────────────────────────────────────
+            if is_li_post:
+                if "linkedin.com/posts" not in url: continue
+                # Extract poster name from title e.g. "John Smith on LinkedIn: ..."
+                poster = ""
+                post_title = ""
+                if " on LinkedIn:" in t_raw:
+                    parts = t_raw.split(" on LinkedIn:", 1)
+                    poster = parts[0].strip()
+                    post_title = parts[1].strip().strip('"').strip()
+                else:
+                    post_title = t_raw
+
+                # Extract company from snippet — look for capitalized names
+                co = ""
+                co_match = re.search(
+                    r'(?:at|@|from|joining)\s+([A-Z][a-zA-Z0-9& ]{2,30}?)(?:\s+(?:is|we|are|for|\.|,|!|–))',
+                    snippet)
+                if co_match: co = co_match.group(1).strip()
+                if not co: co = poster  # fallback: poster IS the contact
+
+                region = detect_region(snippet + " " + url, s.get("region"))
+
+                jobs.append({
+                    "title":    f"LinkedIn Post — {poster}" if poster else "LinkedIn Hiring Post",
+                    "company":  co or "Unknown",
+                    "location": "",
+                    "url":      url,
+                    "source":   "LinkedIn Post",
+                    "region":   region,
+                    "note":     f"{poster}: {snippet[:120]}" if poster else snippet[:120],
+                    "is_li_post": True,
+                    "poster":   poster,
+                    "desc":     snippet[:300],
+                    "post_title": post_title,
+                })
+                continue
+
+            # ── Regular ATS / job page handling ───────────────────────────
             if not any(a in url for a in ["greenhouse.io","lever.co","ashbyhq.com",
                                            "jobs.ashbyhq","linkedin.com/jobs"]):
                 continue
-            # Parse role + company
             if " at " in t_raw:
                 role, company = t_raw.split(" at ",1)
             else:
@@ -228,7 +289,9 @@ def call_google_search(s):
             jobs.append({"title":role,"company":company,"location":"",
                          "url":url,"source":src,"region":region,
                          "note":snippet[:120]})
-        print(f"  ✓ google_search [{s['query'][:45]}…] → {len(jobs)} results")
+
+        label = "linkedin_posts" if is_li_post else s['query'][:45]
+        print(f"  ✓ google [{label}…] → {len(jobs)} results")
         return jobs
     except Exception as e:
         print(f"  ✗ google_search error: {e}"); return []
@@ -242,6 +305,9 @@ SKIP_KW   = ["ios only","flutter","react native","intern","junior",
              "frontend engineer","web engineer"]
 
 def is_relevant(job):
+    # LinkedIn posts go through a separate path — always allow
+    if job.get("is_li_post"): return bool(job.get("url",""))
+
     title = job.get("title","").lower()
     url   = job.get("url","")
     if not url or len(url) < 10: return False
@@ -286,6 +352,45 @@ def inject(content, entries):
     blk = hdr + ",\n".join(entries) + ",\n"
     return content[:idx] + blk + content[idx:], len(entries)
 
+
+def inject_li_posts(content, li_entries):
+    """Inject new LinkedIn post entries into the LI_POSTS array."""
+    if not li_entries: return content, 0
+
+    # Find end of LI_POSTS array
+    li_start = content.find('const LI_POSTS=[')
+    if li_start == -1: return content, 0
+    # Find the closing ]; of LI_POSTS
+    li_end = content.find('];\n', li_start)
+    if li_end == -1: return content, 0
+
+    ts  = datetime.datetime.utcnow().strftime('%H:%M UTC')
+    hdr = f"\n  // ─── AUTO LI · {TODAY} · {ts} ───\n"
+    blk = hdr + ",\n".join(li_entries) + ",\n"
+    return content[:li_end] + blk + content[li_end:], len(li_entries)
+
+
+def build_li_entry(job):
+    """Build a LI_POSTS JS entry from a scraped LinkedIn post."""
+    co      = esc(job.get("company","Unknown"))
+    poster  = esc(job.get("poster",""))
+    desc    = esc(job.get("desc",""))
+    url     = job.get("url","")
+    region  = job.get("region","Remote")
+    note    = esc(job.get("note",""))
+    title   = esc(job.get("post_title","Android Hiring Post"))
+    lv      = "Senior"
+
+    return (
+        f'  {{co:"{co}",role:"{title}",'
+        f'loc:"",region:"{region}",lv:"{lv}",'
+        f'postType:"LinkedIn Post",'
+        f'desc:"{desc}",'
+        f'posted:"{TODAY}",'
+        f'url:"{url}",'
+        f'contact:"{poster}"}}'
+    )
+
 def update_title(content):
     my = datetime.date.today().strftime("%b %Y")
     return re.sub(r'Android Job Tracker · [A-Za-z]+ \d{4}',
@@ -303,7 +408,7 @@ def main():
         print("✗ SERPAPI_KEY not set. Exiting."); sys.exit(1)
 
     utc_hour = datetime.datetime.utcnow().hour
-    batches  = HOUR_TO_BATCHES.get(utc_hour, [0, 5])
+    batches  = get_batches_for_hour(utc_hour)
     print(f"UTC {utc_hour}h → batches {batches}")
 
     if not batches:
@@ -328,9 +433,13 @@ def main():
 
     print(f"\nRaw: {len(all_jobs)} results")
 
-    # Deduplicate + filter
+    # Split LinkedIn posts from regular job listings
+    raw_posts = [j for j in all_jobs if j.get("is_li_post")]
+    raw_jobs  = [j for j in all_jobs if not j.get("is_li_post")]
+
+    # Deduplicate + filter regular jobs
     seen, new_jobs = set(existing_urls), []
-    for job in all_jobs:
+    for job in raw_jobs:
         url = re.sub(r'\?utm_.*', '', job.get("url","").strip())
         url = re.sub(r'&utm_[^&]*', '', url)
         if not url or url in seen: continue
@@ -339,29 +448,54 @@ def main():
         job["url"] = url
         new_jobs.append(job)
 
-    print(f"New unique relevant: {len(new_jobs)}\n")
+    # Deduplicate LinkedIn posts (by URL)
+    seen_li = set(re.findall(r'url:"([^"]+)"', content))  # existing LI post URLs
+    new_li_posts = []
+    for post in raw_posts:
+        url = post.get("url","").strip()
+        if not url or url in seen_li: continue
+        seen_li.add(url)
+        new_li_posts.append(post)
 
-    if not new_jobs:
+    print(f"New jobs: {len(new_jobs)} | New LI posts: {len(new_li_posts)}\n")
+
+    if not new_jobs and not new_li_posts:
         print("Nothing new — tracker unchanged."); return
 
-    entries = []
+    # Build + inject job entries
+    job_entries = []
     for job in new_jobs:
         print(f"  + {job.get('company','?')} — {job.get('title','?')[:50]}")
-        entries.append(build_entry(job))
+        job_entries.append(build_entry(job))
 
-    updated, count = inject(content, entries)
+    # Build + inject LinkedIn post entries
+    li_entries = []
+    for post in new_li_posts:
+        print(f"  📣 LI post: {post.get('poster','?')} — {post.get('desc','')[:60]}")
+        li_entries.append(build_li_entry(post))
+
+    updated = content
+    job_count = li_count = 0
+
+    if job_entries:
+        updated, job_count = inject(updated, job_entries)
+    if li_entries:
+        updated, li_count = inject_li_posts(updated, li_entries)
+
     updated = update_title(updated)
     save_tracker(updated)
-    print(f"\n✅  +{count} jobs → {TRACKER_FILE}")
+    print(f"\n✅  +{job_count} jobs, +{li_count} LinkedIn posts → {TRACKER_FILE}")
 
     # GitHub step summary
     sp = os.environ.get("GITHUB_STEP_SUMMARY","")
     if sp:
         with open(sp,"a") as f:
             f.write(f"## 🤖 Tracker Update · {TODAY}\n\n")
-            f.write(f"**+{count} new jobs** | Batches: {batches}\n\n")
+            f.write(f"**+{job_count} jobs, +{li_count} LinkedIn posts** | Batches: {batches}\n\n")
             for j in new_jobs:
                 f.write(f"- [{j.get('company','?')} — {j.get('title','?')}]({j.get('url','#')})\n")
+            for p in new_li_posts:
+                f.write(f"- 📣 [{p.get('poster','?')}]({p.get('url','#')}): {p.get('desc','')[:80]}\n")
 
 if __name__ == "__main__":
     main()
