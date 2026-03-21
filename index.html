@@ -233,6 +233,14 @@
     background:transparent;color:var(--muted);font-family:var(--mono);
     font-size:12px;cursor:pointer;}
   .np-close:hover{color:var(--text);border-color:var(--text);}
+
+  /* ── Firebase sync indicator ── */
+  #syncDot{display:inline-block;width:8px;height:8px;border-radius:50%;
+    background:var(--muted);margin-left:8px;vertical-align:middle;
+    transition:background .4s;cursor:default;}
+  #syncDot.syncing{background:var(--amber);}
+  #syncDot.synced {background:var(--accent);}
+  #syncDot.error  {background:var(--red);}
   /* ── Footer ── */
   .footer{position:fixed;bottom:0;left:0;right:0;background:var(--surface);border-top:1px solid var(--border);padding:.55rem 2rem;font-size:11px;color:var(--muted);display:flex;gap:1.5rem;align-items:center;z-index:200;flex-wrap:wrap;}
   .footer strong{color:var(--text);}
@@ -248,6 +256,7 @@
   <div class="header">
     <div class="header-left">
       <h1>Android Job Tracker <span>·</span> Mar 18 2026</h1>
+      <span id="syncDot" title="Sync status: connecting…"></span>
       <p>Abhi · Senior Android Engineer · ATS · Direct · BuiltIn · Otta · Wellfound · LinkedIn Jobs · Glassdoor · Google Jobs · LinkedIn Posts</p>
     </div>
     <div class="header-right" id="stats"></div>
@@ -772,28 +781,112 @@ const LI_POSTS=[
 ];
 
 // ─── STATE ───
-const STORAGE_KEY="abhi_android_tracker_v4";
-let saved={};
-try{saved=JSON.parse(localStorage.getItem(STORAGE_KEY))||{};}catch(e){}
-const jobs=RAW.map((j,i)=>({...j,idx:i+1,status:(_store.statuses[i]||j.status||"Researching"),priority:(_store.priorities[i]||"normal")}));
-function saveAll(){
-  try{localStorage.setItem(STORAGE_KEY,JSON.stringify(_store));}catch(e){}
+// ── Firebase config ────────────────────────────────────────────────────────
+const _fbConfig = {
+  apiKey:            "AIzaSyBuqIACp0bwuKX_5a_BuQgzuKynDoWLxT8",
+  authDomain:        "abhishekdssite.firebaseapp.com",
+  databaseURL:       "https://abhishekdssite.firebaseio.com",
+  projectId:         "abhishekdssite",
+  storageBucket:     "abhishekdssite.firebasestorage.app",
+  messagingSenderId: "31913937658",
+  appId:             "1:31913937658:web:707d64207842b39a8d9743"
+};
+
+// Firebase Realtime DB path for this tracker
+const FB_PATH = "android_tracker/userdata";
+
+// In-memory store — synced from Firebase on load, written back on every change
+let _store = {statuses:{}, priorities:{}, notes:{}};
+
+// Firebase app + db reference
+let _db = null;
+let _fbReady = false;
+
+function _initFirebase(){
+  try{
+    if(!firebase.apps.length) firebase.initializeApp(_fbConfig);
+    _db = firebase.database();
+    _fbReady = true;
+
+    // ── Real-time listener — any change from any device updates the UI instantly
+    _setSyncDot("synced", "connected to Firebase ✓");
+    _db.ref(FB_PATH).on("value", snap => {
+      const data = snap.val();
+      if(data){
+        _store = data;
+        if(!_store.statuses)   _store.statuses   = {};
+        if(!_store.priorities) _store.priorities = {};
+        if(!_store.notes)      _store.notes      = {};
+        // Re-apply to jobs array and re-render
+        jobs.forEach((j,i) => {
+          j.status   = _store.statuses[i]   || j.status   || "Researching";
+          j.priority = _store.priorities[i] || j.priority || "normal";
+        });
+        render();
+        renderStats();
+      }
+    });
+  } catch(e){
+    console.warn("Firebase init failed, falling back to localStorage:", e);
+    _fbReady = false;
+  }
 }
+
+// ── Write to Firebase (debounced 400ms to batch rapid changes) ────────────
+let _saveTimer = null;
+function _setSyncDot(state, tip){
+  const d = document.getElementById("syncDot");
+  if(!d) return;
+  d.className = state;
+  d.title = "Sync: " + tip;
+}
+function _scheduleSync(){
+  _setSyncDot("syncing", "saving…");
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => {
+    if(_fbReady && _db){
+      _db.ref(FB_PATH).set(_store)
+        .then(()  => _setSyncDot("synced",  "saved to Firebase ✓"))
+        .catch(e  => { console.warn("Firebase write failed:", e); _setSyncDot("error", "sync failed"); });
+    } else {
+      // Fallback: localStorage
+      try{
+        localStorage.setItem("abhi_android_tracker_v4", JSON.stringify(_store));
+        _setSyncDot("synced", "saved locally (Firebase offline)");
+      }catch(e){ _setSyncDot("error", "save failed"); }
+    }
+  }, 400);
+}
+
+// ── Public save helpers ────────────────────────────────────────────────────
+function saveAll(){ _scheduleSync(); }
+
 function saveStatuses(){
-  jobs.forEach((j,i)=>{_store.statuses[i]=j.status;});
-  saveAll();
+  jobs.forEach((j,i) => { _store.statuses[i] = j.status; });
+  _scheduleSync();
 }
-function savePriority(idx,val){
-  _store.priorities[idx]=val;
-  jobs[idx].priority=val;
-  saveAll();
+function savePriority(idx, val){
+  _store.priorities[idx] = val;
+  jobs[idx].priority = val;
+  _scheduleSync();
 }
-function saveNotes(idx,notes){
-  _store.notes[idx]=notes;
-  saveAll();
+function saveNotes(idx, notes){
+  _store.notes[idx] = notes;
+  _scheduleSync();
 }
-function getNotes(idx){return _store.notes[idx]||[];}
-function getPriority(idx){return _store.priorities[idx]||'normal';}
+function getNotes(idx)   { return _store.notes[idx]      || []; }
+function getPriority(idx){ return _store.priorities[idx] || "normal"; }
+
+// ── Bootstrap: load from Firebase first, then init listener ───────────────
+// (localStorage used as fallback while Firebase loads)
+const _lsRaw = localStorage.getItem("abhi_android_tracker_v4");
+if(_lsRaw){ try{ _store = JSON.parse(_lsRaw); }catch(e){} }
+if(!_store.statuses)   _store.statuses   = {};
+if(!_store.priorities) _store.priorities = {};
+if(!_store.notes)      _store.notes      = {};
+const saved = _store.statuses;
+const jobs=RAW.map((j,i)=>({...j,idx:i+1,status:(_store.statuses[i]||j.status||"Researching"),priority:(_store.priorities[i]||"normal")}));
+// saveAll/saveStatuses/savePriority/saveNotes/getNotes/getPriority defined above in Firebase block
 
 let sortKey="idx",sortDir=1,activeTab="jobs";
 
@@ -1657,6 +1750,15 @@ function flashLastRow(count=1){
     if(rows.length) rows[rows.length-1].scrollIntoView({behavior:'smooth',block:'center'});
   },120);
 }
+</script>
+
+
+<!-- ── Firebase Realtime Database SDK ─────────────────────────── -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script>
+  // Firebase SDKs are now loaded synchronously above — safe to init
+  if(typeof _initFirebase === 'function') _initFirebase();
 </script>
 </body>
 </html>
