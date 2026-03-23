@@ -12,7 +12,10 @@ Regions: US/Remote, EU (Berlin/Amsterdam/Dublin), India (Bengaluru)
 
 import re, os, sys, json, time, datetime, requests
 
-TRACKER_FILE   = "index.html"
+# Path to index.html — always relative to repo root (one level up from scripts/)
+_SCRIPT_DIR    = os.path.dirname(os.path.abspath(__file__))
+_REPO_ROOT     = os.path.dirname(_SCRIPT_DIR)
+TRACKER_FILE   = os.path.join(_REPO_ROOT, "index.html")
 TODAY          = datetime.date.today().strftime("%Y-%m-%d")
 SERPAPI_KEY    = os.environ.get("SERPAPI_KEY", "")
 SERPAPI_URL    = "https://serpapi.com/search.json"
@@ -347,7 +350,7 @@ def inject(content, entries):
         idx = content.find(marker)
     if idx == -1:
         print("✗ Injection point not found!"); return content, 0
-    ts  = datetime.datetime.utcnow().strftime('%H:%M UTC')
+    ts  = datetime.datetime.now(datetime.timezone.utc).strftime('%H:%M UTC')
     hdr = f"\n  // ─── AUTO · {TODAY} · {ts} ───\n"
     blk = hdr + ",\n".join(entries) + ",\n"
     return content[:idx] + blk + content[idx:], len(entries)
@@ -364,7 +367,7 @@ def inject_li_posts(content, li_entries):
     li_end = content.find('];\n', li_start)
     if li_end == -1: return content, 0
 
-    ts  = datetime.datetime.utcnow().strftime('%H:%M UTC')
+    ts  = datetime.datetime.now(datetime.timezone.utc).strftime('%H:%M UTC')
     hdr = f"\n  // ─── AUTO LI · {TODAY} · {ts} ───\n"
     blk = hdr + ",\n".join(li_entries) + ",\n"
     return content[:li_end] + blk + content[li_end:], len(li_entries)
@@ -401,13 +404,13 @@ def update_title(content):
 def main():
     print(f"\n{'='*55}")
     print(f"  Android Tracker Auto-Update  {TODAY}")
-    print(f"  {datetime.datetime.utcnow().strftime('%H:%M UTC')}")
+    print(f"  {datetime.datetime.now(datetime.timezone.utc).strftime('%H:%M UTC')}")
     print(f"{'='*55}\n")
 
     if not SERPAPI_KEY:
         print("✗ SERPAPI_KEY not set. Exiting."); sys.exit(1)
 
-    utc_hour = datetime.datetime.utcnow().hour
+    utc_hour = datetime.datetime.now(datetime.timezone.utc).hour
     batches  = get_batches_for_hour(utc_hour)
     print(f"UTC {utc_hour}h → batches {batches}")
 
