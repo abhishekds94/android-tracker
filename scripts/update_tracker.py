@@ -2,12 +2,12 @@
 """
 Android Job Tracker — Auto Updater v2
 Uses SerpAPI google_jobs engine which aggregates:
-  LinkedIn, Glassdoor, BuiltIn, Indeed, Naukri, Greenhouse, Lever, Ashby,
+  LinkedIn, Glassdoor, BuiltIn, Indeed, Greenhouse, Lever, Ashby,
   AngelList/Wellfound, ZipRecruiter, Dice, and 100s more — all in ONE search.
 
 Budget: 250 searches/month
 Strategy: rotate 10 search configs across 5 active runs/day = ~240/month
-Regions: US/Remote, EU (Berlin/Amsterdam/Dublin), India (Bengaluru)
+Regions: US/Remote, EU (Berlin/Amsterdam/Paris/Dublin)
 """
 
 import re, os, sys, json, time, datetime, requests
@@ -50,10 +50,10 @@ SEARCHES = [
      "engine": "google_jobs", "location": "Dublin, Ireland",
      "gl": "ie", "hl": "en", "region": "EU", "chips": "date_posted:month"},
 
-    # Index 5 — India Bengaluru
+    # Index 5 — EU Paris / France
     {"query": "Senior Android Engineer Kotlin Jetpack Compose",
-     "engine": "google_jobs", "location": "Bengaluru, Karnataka, India",
-     "gl": "in", "hl": "en", "region": "🇮🇳 India", "chips": "date_posted:month"},
+     "engine": "google_jobs", "location": "Paris, France",
+     "gl": "fr", "hl": "en", "region": "EU", "chips": "date_posted:month"},
 
     # Index 6 — Greenhouse direct ATS
     {"query": 'site:greenhouse.io "Senior Android Engineer" OR "Staff Android Engineer" Kotlin',
@@ -88,7 +88,7 @@ SEARCHES = [
 #   Monthly: (10×15)+(6×15) = 150+90 = 240 ✅ under 250
 #
 HOUR_TO_BATCHES = {
-    14: [4, 5],      # 9am  EST — EU Dublin + India      (odd days only)
+    14: [4, 5],      # 9am  EST — EU Dublin + France     (odd days only)
     17: [2, 3],      # 12pm EST — EU Germany + Amsterdam (odd days only)
     20: [0],         # 3pm  EST — US Senior              (EVERY day — US is primary)
     23: [6, 7, 8],   # 6pm  EST — Greenhouse + Lever + Ashby
@@ -110,9 +110,7 @@ REGION_KW = {
            "remote - us","los angeles"],
     "EU": ["berlin","germany","amsterdam","netherlands","dublin","ireland",
            "london","stockholm","paris","munich","hamburg","europe",
-           "remote eu","eu remote"],
-    "🇮🇳 India": ["bengaluru","bangalore","india","mumbai","hyderabad",
-                  "pune","chennai","noida","gurgaon","gurugram"],
+           "remote eu","eu remote","france"],
     "Remote": ["remote global","worldwide","fully remote","work from anywhere"],
 }
 
@@ -145,7 +143,6 @@ def detect_level(title):
 def detect_visa(region, company):
     co = company.lower()
     if region == "EU":         return "EU Blue Card eligible"
-    if region == "🇮🇳 India": return "No visa needed"
     if region == "Remote":     return "Global remote · verify"
     if any(s in co for s in KNOWN_H1B): return "Known H-1B ✓"
     return "Verify H-1B"
