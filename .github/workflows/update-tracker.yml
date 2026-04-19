@@ -70,11 +70,17 @@ jobs:
       - name: No-op
         if: steps.diff.outputs.changed == 'false'
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
         run: echo "Tracker is up to date."
 =======
+=======
+>>>>>>> Stashed changes
 <<<<<<< HEAD
         run: echo "Tracker is up to date."
 =======
         run: echo "Tracker is up to date."
 >>>>>>> f92ac3c7fb1b50bad42f102b3effe90a2c5a1403
+<<<<<<< Updated upstream
+>>>>>>> Stashed changes
+=======
 >>>>>>> Stashed changes
