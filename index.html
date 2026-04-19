@@ -943,6 +943,36 @@ render();
   .progress-bar.show{display:block;}
   .progress-fill{height:100%;background:var(--accent);width:0%;
     transition:width .3s;border-radius:2px;}
+
+  /* Bulk defaults bar */
+  .bulk-defaults{display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+    padding:.5rem .6rem;background:var(--surface2);border:1px solid var(--border);
+    border-radius:6px;margin-bottom:.6rem;}
+  .bulk-defaults-label{font-size:10px;color:var(--muted);letter-spacing:.05em;white-space:nowrap;}
+  .bulk-defaults select,.bulk-defaults input{
+    background:var(--surface);border:1px solid var(--border2);border-radius:5px;
+    color:var(--text);font-family:var(--mono);font-size:11px;padding:3px 7px;
+    height:26px;outline:none;}
+  .bulk-defaults select:focus,.bulk-defaults input:focus{border-color:var(--accent);}
+  .bulk-defaults input{width:160px;}
+
+  /* Per-row region/loc inline badges */
+  .bq-row{display:grid;grid-template-columns:120px 1fr auto auto auto;gap:6px;
+    align-items:center;padding:5px 8px;border-bottom:1px solid var(--border);font-size:11px;}
+  .bq-meta{display:flex;gap:4px;align-items:center;flex-wrap:wrap;}
+  .bq-badge{font-size:10px;padding:1px 6px;border-radius:4px;cursor:pointer;
+    background:var(--surface2);border:1px solid var(--border2);color:var(--muted);
+    white-space:nowrap;transition:border-color .15s;}
+  .bq-badge:hover{border-color:var(--accent);color:var(--accent);}
+  .bq-badge.has-val{color:var(--blue);border-color:rgba(96,165,250,.3);}
+  .bq-inline-edit{display:none;gap:4px;align-items:center;margin-top:4px;flex-wrap:wrap;}
+  .bq-inline-edit.open{display:flex;}
+  .bq-inline-edit select,.bq-inline-edit input{
+    background:var(--surface2);border:1px solid var(--accent);border-radius:4px;
+    color:var(--text);font-family:var(--mono);font-size:11px;padding:2px 6px;height:24px;outline:none;}
+  .bq-inline-edit input{width:130px;}
+  .bq-inline-save{font-size:10px;padding:2px 8px;border-radius:4px;border:none;
+    background:var(--accent);color:#0d0f11;cursor:pointer;font-family:var(--mono);font-weight:600;}
 </style>
 
 <button class="fab" onclick="openAddModal()" title="Add roles manually">＋</button>
@@ -967,9 +997,9 @@ render();
         <label>Job description URL *</label>
         <input id="m-url" type="url" placeholder="https://job-boards.greenhouse.io/..." />
       </div>
-      <div class="modal-preview" id="m-preview">
+      <div class="modal-preview show" id="m-preview">
         <div class="pv-row"><span class="pv-label">Role</span>
-          <input class="pv-input" id="pv-role" type="text" placeholder="Role title" /></div>
+          <input class="pv-input" id="pv-role" type="text" placeholder="Role title (auto-filled on fetch)" /></div>
         <div class="pv-row"><span class="pv-label">Location</span>
           <input class="pv-input" id="pv-loc" type="text" placeholder="e.g. Berlin / Remote US" /></div>
         <div class="pv-row"><span class="pv-label">Region</span>
@@ -1014,10 +1044,22 @@ You can also paste directly from a spreadsheet (Excel / Google Sheets)."></texta
         </div>
       </div>
 
+      <!-- Default region/location applied to all bulk rows -->
+      <div class="bulk-defaults">
+        <span class="bulk-defaults-label">Defaults for all rows:</span>
+        <select id="bulk-default-region">
+          <option value="">Auto-detect region</option>
+          <option value="US">🇺🇸 US</option>
+          <option value="EU">🇪🇺 EU</option>
+          <option value="Remote">🌍 Remote</option>
+        </select>
+        <input id="bulk-default-loc" type="text" placeholder="Default location (e.g. Berlin)" />
+      </div>
+
       <!-- Queue preview table -->
       <div class="bulk-queue" id="bulk-queue">
         <div class="bq-header">
-          <span>Company</span><span>URL</span><span>Status</span><span></span>
+          <span>Company</span><span>URL / Region · Location</span><span>Status</span><span></span>
         </div>
         <div id="bq-rows"></div>
       </div>
@@ -1298,8 +1340,13 @@ function finaliseRender(){
 
 function resetSingle(){
   ['m-co','m-url'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('m-preview').classList.remove('show');
-  document.getElementById('m-save-btn').disabled=true;
+  // Clear preview fields but keep panel always visible
+  ['pv-role','pv-loc','pv-visa','pv-src','pv-note'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.value='';
+  });
+  const reg=document.getElementById('pv-region'); if(reg) reg.value='US';
+  const lv=document.getElementById('pv-lv');   if(lv)  lv.value='Senior';
+  document.getElementById('m-save-btn').disabled=false;
   setStatus('m-status','','');
   _manualJob=null;
 }
@@ -1344,9 +1391,9 @@ function saveManualRole(){
   const url = document.getElementById('m-url').value.trim();
   if(!co)  {setStatus('m-status','Enter company name first','err');return;}
   if(!url) {setStatus('m-status','Enter a JD URL first','err');return;}
-  // If never fetched, build a fallback job then read fields
+  // Build base job if never fetched
   if(!_manualJob) _manualJob = fallbackJob(co, url);
-  // Read possibly-edited preview field values
+  // Always read the preview fields (user may have typed without fetching)
   const pvRole   = document.getElementById('pv-role');
   const pvLoc    = document.getElementById('pv-loc');
   const pvRegion = document.getElementById('pv-region');
@@ -1354,13 +1401,13 @@ function saveManualRole(){
   const pvVisa   = document.getElementById('pv-visa');
   const pvSrc    = document.getElementById('pv-src');
   const pvNote   = document.getElementById('pv-note');
-  if(pvRole)   _manualJob.role   = pvRole.value.trim()   || _manualJob.role;
-  if(pvLoc)    _manualJob.loc    = pvLoc.value.trim()    || _manualJob.loc;
-  if(pvRegion) _manualJob.region = pvRegion.value        || _manualJob.region;
-  if(pvLv)     _manualJob.level  = pvLv.value            || _manualJob.level;
-  if(pvVisa)   _manualJob.visa   = pvVisa.value.trim()   || _manualJob.visa;
-  if(pvSrc)    _manualJob.src    = pvSrc.value.trim()    || _manualJob.src;
-  if(pvNote)   _manualJob.note   = pvNote.value.trim()   || _manualJob.note;
+  if(pvRole)   _manualJob.role   = pvRole.value.trim()   || _manualJob.role   || co+' Role';
+  if(pvLoc)    _manualJob.loc    = pvLoc.value.trim()    || _manualJob.loc    || 'Remote';
+  if(pvRegion) _manualJob.region = pvRegion.value        || _manualJob.region || 'Remote';
+  if(pvLv)     _manualJob.level  = pvLv.value            || _manualJob.level  || 'Senior';
+  if(pvVisa)   _manualJob.visa   = pvVisa.value.trim()   || _manualJob.visa   || guessVisa(_manualJob.region, co);
+  if(pvSrc)    _manualJob.src    = pvSrc.value.trim()    || _manualJob.src    || guessSource(url);
+  if(pvNote)   _manualJob.note   = pvNote.value.trim()   || _manualJob.note   || '';
   _manualJob.co  = co;
   _manualJob.url = url;
   pushJobToTracker(_manualJob);
@@ -1382,6 +1429,10 @@ function resetBulk(){
   document.getElementById('bulk-progress').classList.remove('show');
   document.getElementById('bulk-fill').style.width='0%';
   setStatus('bulk-status','','');
+  const defReg=document.getElementById('bulk-default-region');
+  const defLoc=document.getElementById('bulk-default-loc');
+  if(defReg) defReg.value='';
+  if(defLoc) defLoc.value='';
   _bulkQueue=[];
 }
 
@@ -1389,38 +1440,42 @@ function parseBulk(){
   const raw = document.getElementById('bulk-input').value.trim();
   if(!raw){setStatus('bulk-status','Paste some rows first','err');return;}
 
+  const defRegion = document.getElementById('bulk-default-region').value;
+  const defLoc    = document.getElementById('bulk-default-loc').value.trim();
+
   const lines = raw.split('\n').map(l=>l.trim()).filter(Boolean);
   _bulkQueue = [];
 
   for(const line of lines){
-    // Detect separator: tab first, then comma, then space-before-http
     let co='', url='';
     if(line.includes('\t')){
       const parts=line.split('\t');
       co=parts[0].trim(); url=parts.slice(1).join('').trim();
     } else if(line.match(/^https?:\/\//)){
-      // URL only — guess company from URL
       url=line.trim(); co=guessCoFromUrl(url);
     } else {
-      // Try comma split
       const commaIdx=line.indexOf(',');
       if(commaIdx>0){
         co=line.slice(0,commaIdx).trim();
         url=line.slice(commaIdx+1).trim();
       } else {
-        // Last resort: split on first http
         const httpIdx=line.indexOf('http');
         if(httpIdx>0){co=line.slice(0,httpIdx).trim(); url=line.slice(httpIdx).trim();}
         else {co=line; url='';}
       }
     }
 
-    // Validate URL
     let validUrl=false;
     try{new URL(url); validUrl=true;}catch(e){}
 
-    _bulkQueue.push({co:co||guessCoFromUrl(url)||'Unknown',
-                     url, status: validUrl?'pending':'invalid', job:null});
+    _bulkQueue.push({
+      co: co||guessCoFromUrl(url)||'Unknown',
+      url,
+      status: validUrl?'pending':'invalid',
+      job: null,
+      region: defRegion || '',   // per-row override (empty = auto-detect)
+      loc:    defLoc    || '',   // per-row location override
+    });
   }
 
   renderBulkQueue();
@@ -1433,19 +1488,73 @@ function parseBulk(){
 
 function renderBulkQueue(){
   const container=document.getElementById('bq-rows');
-  container.innerHTML=_bulkQueue.map((r,i)=>`
-    <div class="bq-row" id="bq-row-${i}">
-      <span class="bq-co" title="${r.co}">${r.co}</span>
-      <span class="bq-url" title="${r.url}">${r.url||'—'}</span>
-      <span class="bq-status ${r.status}" id="bq-status-${i}">
-        ${r.status==='pending'?'⏳ queued'
-         :r.status==='ok'?'✓ fetched'
-         :r.status==='invalid'?'✗ bad URL'
-         :r.status==='error'?'✗ failed'
-         :'—'}
-      </span>
-      <span class="bq-del" onclick="removeBulkRow(${i})" title="Remove">✕</span>
-    </div>`).join('');
+  container.innerHTML=_bulkQueue.map((r,i)=>{
+    const regionLabel = r.region || 'Auto';
+    const locLabel    = r.loc    || 'Auto';
+    const regionHasVal = !!r.region;
+    const locHasVal    = !!r.loc;
+    return `
+    <div class="bq-row" id="bq-row-${i}" style="flex-direction:column;align-items:flex-start;display:block;padding:6px 8px;border-bottom:1px solid var(--border);">
+      <div style="display:grid;grid-template-columns:120px 1fr auto auto;gap:6px;align-items:center;width:100%;">
+        <span class="bq-co" title="${r.co}">${r.co}</span>
+        <span class="bq-url" title="${r.url}" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:10px;color:var(--muted);">${r.url||'—'}</span>
+        <span class="bq-status ${r.status}" id="bq-status-${i}">
+          ${r.status==='pending'?'⏳ queued'
+           :r.status==='ok'?'✓ fetched'
+           :r.status==='invalid'?'✗ bad URL'
+           :r.status==='error'?'✗ failed'
+           :'—'}
+        </span>
+        <span class="bq-del" onclick="removeBulkRow(${i})" title="Remove">✕</span>
+      </div>
+      <div class="bq-meta" style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap;">
+        <span class="bq-badge ${regionHasVal?'has-val':''}" onclick="toggleBqEdit(${i})" title="Click to set region/location">
+          🌍 ${regionLabel}
+        </span>
+        <span class="bq-badge ${locHasVal?'has-val':''}" onclick="toggleBqEdit(${i})" title="Click to set location">
+          📍 ${locLabel}
+        </span>
+      </div>
+      <div class="bq-inline-edit" id="bq-edit-${i}">
+        <select id="bq-region-${i}" onchange="saveBqMeta(${i})">
+          <option value="" ${!r.region?'selected':''}>Auto-detect</option>
+          <option value="US" ${r.region==='US'?'selected':''}>🇺🇸 US</option>
+          <option value="EU" ${r.region==='EU'?'selected':''}>🇪🇺 EU</option>
+          <option value="Remote" ${r.region==='Remote'?'selected':''}>🌍 Remote</option>
+        </select>
+        <input id="bq-loc-${i}" type="text" value="${r.loc||''}" placeholder="Location (e.g. Berlin)" oninput="saveBqMeta(${i})" />
+        <button class="bq-inline-save" onclick="toggleBqEdit(${i})">✓ Done</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function toggleBqEdit(i){
+  const el=document.getElementById(`bq-edit-${i}`);
+  if(!el) return;
+  el.classList.toggle('open');
+  if(el.classList.contains('open')) document.getElementById(`bq-loc-${i}`)?.focus();
+}
+
+function saveBqMeta(i){
+  const regEl=document.getElementById(`bq-region-${i}`);
+  const locEl=document.getElementById(`bq-loc-${i}`);
+  if(regEl) _bulkQueue[i].region = regEl.value;
+  if(locEl) _bulkQueue[i].loc    = locEl.value.trim();
+  // Update badges without full re-render
+  const row=document.getElementById(`bq-row-${i}`);
+  if(row){
+    const badges=row.querySelectorAll('.bq-badge');
+    const r=_bulkQueue[i];
+    if(badges[0]){
+      badges[0].textContent=`🌍 ${r.region||'Auto'}`;
+      badges[0].classList.toggle('has-val',!!r.region);
+    }
+    if(badges[1]){
+      badges[1].textContent=`📍 ${r.loc||'Auto'}`;
+      badges[1].classList.toggle('has-val',!!r.loc);
+    }
+  }
 }
 
 function removeBulkRow(i){
@@ -1491,6 +1600,13 @@ async function fetchAllBulk(){
       r.job=fallbackJob(r.co, r.url);
       setBulkRowStatus(i,'error','⚠ best-guess');
     }
+    // Apply per-row region/loc overrides
+    if(r.job){
+      if(r.region) r.job.region = r.region;
+      if(r.loc)    r.job.loc    = r.loc;
+      // Re-derive visa if region was overridden
+      if(r.region) r.job.visa = guessVisa(r.region, r.co);
+    }
 
     done++;
     fill.style.width=`${Math.round(done/total*100)}%`;
@@ -1506,7 +1622,14 @@ function saveAllBulk(){
   const toSave=_bulkQueue.filter(r=>r.job && (r.status==='ok'||r.status==='error'));
   if(!toSave.length){setStatus('bulk-status','Nothing to save yet','err');return;}
 
-  toSave.forEach(r=>pushJobToTracker(r.job));
+  toSave.forEach(r=>{
+    // Apply any per-row overrides that weren't applied during fetch
+    if(r.job){
+      if(r.region) { r.job.region=r.region; r.job.visa=guessVisa(r.region,r.co); }
+      if(r.loc)    r.job.loc=r.loc;
+    }
+    pushJobToTracker(r.job);
+  });
   finaliseRender();
   closeAddModal();
   flashLastRow(toSave.length);
