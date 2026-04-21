@@ -1,5 +1,4 @@
 name: 🤖 Auto-Update Android Tracker
-
 on:
   schedule:
     - cron: '0 14 * * *'
@@ -13,11 +12,9 @@ on:
         description: 'Force batch indices e.g. "0,1"'
         required: false
         default: ''
-
 concurrency:
   group: tracker-update
   cancel-in-progress: false
-
 jobs:
   update:
     name: Scrape & Inject New Jobs
@@ -29,16 +26,13 @@ jobs:
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
-
       - name: Install dependencies
         run: pip install requests
-
       - name: Run updater
         env:
           SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
@@ -46,7 +40,6 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE
           python scripts/update_tracker.py
-
       - name: Check for changes
         id: diff
         run: |
@@ -57,7 +50,6 @@ jobs:
             COUNT=$(git diff index.html | grep -c "^+.*added:" || echo "0")
             echo "new_count=$COUNT" >> $GITHUB_OUTPUT
           fi
-
       - name: Commit & push
         if: steps.diff.outputs.changed == 'true'
         run: |
@@ -66,21 +58,6 @@ jobs:
           git add index.html
           git commit -m "🤖 +${{ steps.diff.outputs.new_count }} jobs · $(TZ='America/New_York' date +'%Y-%m-%d %I:%M %p EST')"
           git push
-
       - name: No-op
         if: steps.diff.outputs.changed == 'false'
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
         run: echo "Tracker is up to date."
-=======
-=======
->>>>>>> Stashed changes
-<<<<<<< HEAD
-        run: echo "Tracker is up to date."
-=======
-        run: echo "Tracker is up to date."
->>>>>>> f92ac3c7fb1b50bad42f102b3effe90a2c5a1403
-<<<<<<< Updated upstream
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
